@@ -31,7 +31,7 @@ TIME_VERSION="${VERSION%T*}"
 echo "Generating Dockerfiles for version $VERSION"
 
 # debuerreotype 输出结构:
-#   out/{date}/{arch}/{suite}/           <- 标准变体 (rootfs 文件直接在这里)
+#   out/{date}/{arch}/{suite}/           <- standard 变体 (rootfs 文件直接在这里)
 #   out/{date}/{arch}/{suite}/slim/     <- slim 变体
 
 SUITE_DIR="$OUT_DIR/$TIME_VERSION/$ARCH/$SUITE"
@@ -41,30 +41,24 @@ if [[ ! -d "$SUITE_DIR" ]]; then
     exit 1
 fi
 
-# 定义变体列表: "变体名:rootfs来源目录"
+# 定义变体: "变体名:模板文件:rootfs来源目录"
 declare -a VARIANTS=(
-    ":$SUITE_DIR"
-    "slim:$SUITE_DIR/slim"
+    "standard:Dockerfile-standard.template:$SUITE_DIR"
+    "slim:Dockerfile-slim.template:$SUITE_DIR/slim"
 )
 
 for variant_def in "${VARIANTS[@]}"; do
-    variant="${variant_def%%:*}"
-    rootfs_dir="${variant_def#*:}"
+    IFS=':' read -r variant template_file rootfs_dir <<< "$variant_def"
 
     if [[ ! -d "$rootfs_dir" ]]; then
         echo "  跳过变体 '$variant': 目录不存在 $rootfs_dir"
         continue
     fi
 
-    echo "  处理变体: ${variant:-standard}"
+    echo "  处理变体: $variant"
 
     # 创建输出目录
-    if [[ -z "$variant" ]]; then
-        build_dir="$VERSION"
-    else
-        build_dir="$VERSION/$variant"
-    fi
-    mkdir -p "$build_dir"
+    mkdir -p "$VERSION/$variant"
 
     # 生成 Dockerfile
     sed -e "s/{VERSION}/$VERSION/g" \
@@ -72,10 +66,10 @@ for variant_def in "${VARIANTS[@]}"; do
         -e "s/{DEBIAN_VERSION_NAME}/$DEBIAN_VERSION_NAME/g" \
         -e "s/{SUITE}/$SUITE/g" \
         -e "s/{TIME_VERSION}/$TIME_VERSION/g" \
-        Dockerfile.template > "$build_dir/Dockerfile"
+        "$template_file" > "$VERSION/$variant/Dockerfile"
 
     # 复制 rootfs 到构建目录
-    cp "$rootfs_dir/rootfs.tar.xz" "$build_dir/"
+    cp "$rootfs_dir/rootfs.tar.xz" "$VERSION/$variant/"
 
-    echo "  生成: $build_dir/Dockerfile"
+    echo "  生成: $VERSION/$variant/Dockerfile"
 done
