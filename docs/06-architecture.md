@@ -1,28 +1,31 @@
-# 06 — 整体架构（v6.7）
+# 06 — 整体架构（v6.8）
 
 ## 目标架构
 
 ```
 tools/                              ← 1 套统一工具
-├── lib.sh                          ← 共享函数
+├── lib.sh                          ← 共享函数（日志、配置解析、版本管理）
 └── process_version.sh              ← 统一入口
 
 library/                            ← 项目目录
 ├── ruby/
 │   ├── AGENTS.md                   ← AI agent 上下文
-│   ├── config.yml                  ← 声明式配置
+│   ├── config.yml                  ← 声明式配置（强约束）
 │   ├── processed_versions.txt      ← 版本跟踪
-│   ├── fetch_versions.sh           ← 自定义版本脚本（可选）
+│   ├── get_latest_version.sh       ← 自定义版本脚本（可选）
 │   └── template/
-│       ├── update.sh               ← 项目专属
-│       ├── apply-templates.sh      ← 项目专属
+│       ├── update.sh               ← 项目专属：处理变量
+│       ├── apply-templates.sh      ← 项目专属：应用模板生成 Dockerfile
 │       ├── Dockerfile-forky.template
 │       ├── Dockerfile-slim-forky.template
 │       ├── Dockerfile-alpine.template
-│       └── 4.0.6/
-│           ├── forky/Dockerfile
-│           ├── slim-forky/Dockerfile
-│           └── alpine/Dockerfile
+│       └── 4.0.6/                  ← 生成的版本目录
+│           ├── forky/
+│           │   └── Dockerfile
+│           ├── slim-forky/
+│           │   └── Dockerfile
+│           └── alpine/
+│               └── Dockerfile
 │
 └── ...
 
@@ -34,22 +37,235 @@ library/                            ← 项目目录
 ## 关键约束
 
 1. **process_version.sh 流程强制统一**
-2. **每次 CI 只执行一个版本**
-3. **latest tag 逻辑** — 只在版本 >= processed_versions.txt 最新版本时更新
+2. **每次 CI 只执行一个版本** — fetch_versions.sh 只输出最新版本（1 行）
+3. **tags 由 config.yml 声明** — process_version.sh 渲染 `{version}` 变量
 4. **使用 buildx 构建** — `--platform linux/loong64`
 5. **并行由 GitHub 触发**
 6. **processed_versions.txt** — 存储在仓库内，更新后提交，处理并发冲突
 7. **每个项目有 AGENTS.md** — 为 AI agent 提供上下文
 
+---
+
+## config.yml 强约束
+
+### 完整格式
+
+```yaml
+# library/{project}/config.yml
+
+# 项目标识（必填）
+project:
+  org: library                    # 组织名
+  name: ruby                      # 项目名
+
+# 版本来源（必填）
+version_source:
+  type: github_releases           # github_releases | script
+  repository: "ruby/ruby"         # type=github_releases 时必填
+  tag_regex: "^v([0-9]+\\.[0-9]+\\.[0-9]+)$"  # type=github_releases 时必填
+  script: get_latest_version.sh   # type=script 时必填
+
+# 变体定义（必填，至少一个）
+variants:
+  - name: "forky"                 # 变体名（对应目录名）
+    template: "Dockerfile-forky.template"  # 模板文件名（必须在 template/ 目录下存在）
+    tags:                         # 标签列表（{version} 由 process_version.sh 渲染）
+      - "{version}"
+      - "latest"
+  - name: "slim-forky"
+    template: "Dockerfile-slim-forky.template"
+    tags:
+      - "{version}-slim"
+  - name: "alpine"
+    template: "Dockerfile-alpine.template"
+    tags:
+      - "{version}-alpine"
+
+# 推送配置（必填）
+push:
+  registry: "lcr.loongnix.cn"    # 镜像仓库地址
+  repository: "library/ruby"      # 镜像仓库路径
+```
+
+### 约束规则
+
+| 规则 | 说明 |
+|------|------|
+| `project.org` + `project.name` | 唯一标识项目，用于 workflow 文件名映射 |
+| `variants[].name` | 必须唯一，对应 `template/{version}/{name}/` 目录名 |
+| `variants[].template` | 必须是 `Dockerfile-{variant}.template` 格式，且文件必须存在 |
+| `variants[].tags` | 至少一个标签，`{version}` 为唯一允许的变量占位符 |
+| `push.registry` | 镜像推送目标，buildx 构建时使用 |
+| `push.repository` | 镜像仓库路径，与 registry 拼接为完整地址 |
+
+### 变量渲染
+
+process_version.sh 在构建时渲染 `variants[].tags` 中的变量：
+
+| 变量 | 含义 | 示例值 |
+|------|------|--------|
+| `{version}` | 完整版本号 | `4.0.6`, `20260803T022142Z` |
+
+渲染后传递给 docker buildx：
+```
+lcr.loongnix.cn/library/ruby:4.0.6
+lcr.loongnix.cn/library/ruby:latest
+```
+
+---
+
+## template 目录强约束
+
+### 目录结构
+
+```
+{project}/template/
+├── update.sh                     ← 必填：处理变量
+├── apply-templates.sh            ← 必填：应用模板生成 Dockerfile
+├── Dockerfile-{variant}.template ← 必填：每个变体一个模板
+├── {辅助文件}                     ← 可选：debian.version, modify-rootfs-url.sh 等
+└── {full_version}/               ← 生成目录（由 apply-templates.sh 创建）
+    └── {variant}/
+        └── Dockerfile            ← 渲染后的 Dockerfile
+```
+
+### 模板文件规范
+
+**命名**：`Dockerfile-{variant}.template`
+- variant 名必须与 config.yml 中 `variants[].name` 一致
+- 示例：`Dockerfile-forky.template`, `Dockerfile-slim-forky.template`, `Dockerfile-alpine.template`
+
+**变量占位符**（由 apply-templates.sh 使用 sed 渲染）：
+
+| 变量 | 含义 | 示例值 |
+|------|------|--------|
+| `{VERSION}` | 完整版本号 | `4.0.6` |
+| `{MAJOR_VERSION}` | 主版本号 | `4.0` |
+| `{VARIANT}` | 变体名 | `forky` |
+| `{REGISTRY}` | 镜像仓库地址 | `lcr.loongnix.cn` |
+| `{REPOSITORY}` | 镜像仓库路径 | `library/ruby` |
+| `{CUSTOM_*}` | 项目自定义变量 | 由 update.sh 生成 |
+
+**示例：Dockerfile-forky.template**
+
+```dockerfile
+ARG VERSION
+
+FROM {REGISTRY}/library/buildpack-deps:forky
+
+ARG VERSION
+LABEL org.opencontainers.image.version="{VERSION}"
+
+RUN apt-get update && apt-get install -y \
+    ruby-{VERSION} \
+    && rm -rf /var/lib/apt/lists/*
+
+CMD ["ruby", "--version"]
+```
+
+### 脚本规范
+
+**update.sh**
+- 接收参数：`$1` = 版本号
+- 职责：处理变量，生成 variables.json 或设置环境变量
+- 输出：供 apply-templates.sh 使用的变量数据
+
+**apply-templates.sh**
+- 接收参数：`$1` = 版本号
+- 职责：遍历 config.yml 中的 variants，使用对应模板生成 Dockerfile
+- 输出：`{version}/{variant}/Dockerfile` + `{version}/{variant}/rootfs.tar.xz`（如需要）
+
+---
+
+## 上游模板拆分规则
+
+如果上游使用 jinja 混合 debian 和 alpine 模板，拆分为两个独立模板：
+
+### 示例：上游混合模板
+
+```dockerfile
+# upstream/Dockerfile.template（jinja）
+{% if variant == 'alpine' %}
+FROM alpine:3.24
+RUN apk add --no-cache ruby
+{% else %}
+FROM buildpack-deps:forky
+RUN apt-get update && apt-get install -y ruby
+{% endif %}
+```
+
+### 拆分后
+
+```dockerfile
+# template/Dockerfile-forky.template
+FROM buildpack-deps:forky
+RUN apt-get update && apt-get install -y ruby
+```
+
+```dockerfile
+# template/Dockerfile-alpine.template
+FROM alpine:3.24
+RUN apk add --no-cache ruby
+```
+
+### 拆分原则
+
+1. 每个模板文件只包含一个变体的内容
+2. 移除所有 jinja/条件逻辑
+3. 保留完整的 Dockerfile 语法
+4. 使用统一的变量占位符
+
+---
+
 ## 调用方式
 
 ```bash
 ./tools/process_version.sh library/ruby
+./tools/process_version.sh library/debian
+
+# 测试模式
+./tools/process_version.sh --test library/ruby 4.0.6
+./tools/process_version.sh -t library/debian 20260803T022142Z
+
+# Dry run
+DRY_RUN=true ./tools/process_version.sh library/ruby
+```
+
+## 数据流
+
+```
+process_version.sh library/ruby
+    │
+    ├──→ get_latest_version.sh → "4.0.6"
+    │
+    ├──→ grep "4.0.6" processed_versions.txt
+    │       │
+    │       ├── 存在 → "版本已构建，跳过"
+    │       │
+    │       └── 不存在 → 继续构建
+    │
+    ├──→ update.sh 4.0.6 → variables.json
+    │
+    ├──→ apply-templates.sh 4.0.6
+    │       │
+    │       └──→ 遍历 variants，生成 Dockerfile
+    │               template/forky/Dockerfile
+    │               template/slim-forky/Dockerfile
+    │               template/alpine/Dockerfile
+    │
+    ├──→ buildx 构建
+    │       │
+    │       └──→ 读取 config.yml tags，渲染 {version}
+    │               lcr.loongnix.cn/library/ruby:4.0.6
+    │               lcr.loongnix.cn/library/ruby:latest
+    │
+    └──→ git commit processed_versions.txt
 ```
 
 ## GitHub Actions Workflow
 
 ```yaml
+# .github/workflows/library-ruby.yml
 name: 'library::ruby'
 
 on:
@@ -63,7 +279,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Login to Registry
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: |
+            image=moby/buildkit:latest
+
+      - name: Login to Loongnix Registry
         uses: docker/login-action@v3
         with:
           registry: lcr.loongnix.cn
@@ -74,20 +297,10 @@ jobs:
         run: ./tools/process_version.sh library/ruby
 ```
 
-## 数据流
+## buildx 初始化
 
-```
-process_version.sh library/ruby
-    │
-    ├──→ fetch_versions.sh → 最新版本
-    │
-    ├──→ 检查 processed_versions.txt
-    │
-    ├──→ update.sh <version> → variables.json
-    │
-    ├──→ apply-templates.sh <version> → Dockerfile
-    │
-    ├──→ docker buildx build --platform linux/loong64
-    │
-    └──→ git commit processed_versions.txt
+```bash
+# 在 self-hosted runner 上执行一次
+docker buildx create --name loongarch64 --driver docker-container --use
+docker buildx inspect --bootstrap
 ```
