@@ -1,5 +1,5 @@
 #!/bin/bash
-# library/debian/fetch_versions.sh
+# library/debian/get_latest_version.sh
 # 输出最新版本号（1 行）
 set -eo pipefail
 

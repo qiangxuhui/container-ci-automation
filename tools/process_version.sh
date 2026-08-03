@@ -5,43 +5,126 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
-PROJECT_DIR="$1"
+# ===== 帮助信息 =====
+usage() {
+    cat << 'EOF'
+用法: process_version.sh <project_dir> [version]
+
+参数:
+  project_dir    项目目录（如 library/ruby, library/debian）
+  version        版本号（可选，仅测试模式需要）
+
+选项:
+  --help, -h     显示此帮助信息
+  --test, -t     测试模式
+
+模式说明:
+  默认模式:
+    ./tools/process_version.sh library/ruby
+    - 获取最新版本
+    - 检查是否已构建
+    - 未构建则执行构建
+    - 推送镜像
+    - 更新 processed_versions.txt
+
+  测试模式:
+    ./tools/process_version.sh --test library/ruby 4.0.6
+    ./tools/process_version.sh -t library/ruby 4.0.6
+    - 必须指定版本号
+    - 无论是否已构建都执行
+    - 不推送镜像
+    - 不更新 processed_versions.txt
+
+示例:
+  ./tools/process_version.sh library/ruby
+  ./tools/process_version.sh library/debian
+  ./tools/process_version.sh --test library/ruby 4.0.6
+  ./tools/process_version.sh -t library/debian 20260803T022142Z
+EOF
+    exit 0
+}
+
+# ===== 解析参数 =====
+TEST_MODE=false
+PROJECT_DIR=""
+VERSION=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)
+            usage
+            ;;
+        --test|-t)
+            TEST_MODE=true
+            shift
+            ;;
+        -*)
+            log ERROR "未知选项: $1"
+            usage
+            ;;
+        *)
+            if [[ -z "$PROJECT_DIR" ]]; then
+                PROJECT_DIR="$1"
+            elif [[ -z "$VERSION" ]]; then
+                VERSION="$1"
+            fi
+            shift
+            ;;
+    esac
+done
 
 if [[ -z "$PROJECT_DIR" ]]; then
-    echo "Usage: $0 <project_dir>"
-    echo "Example: $0 library/ruby"
-    exit 1
+    log ERROR "请指定项目目录"
+    usage
 fi
 
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
-DRY_RUN="${DRY_RUN:-false}"
+
+# 测试模式必须指定版本号
+if [[ "$TEST_MODE" == "true" ]] && [[ -z "$VERSION" ]]; then
+    log ERROR "测试模式必须指定版本号"
+    echo "用法: $0 --test <project_dir> <version>"
+    exit 1
+fi
 
 # 加载配置
 eval "$(parse_config "$PROJECT_DIR/config.yml")"
 
 main() {
     log INFO "========================================="
-    log INFO "Processing: $PROJECT_ORG/$PROJECT_NAME"
+    if [[ "$TEST_MODE" == "true" ]]; then
+        log INFO "测试模式: $PROJECT_ORG/$PROJECT_NAME"
+    else
+        log INFO "处理: $PROJECT_ORG/$PROJECT_NAME"
+    fi
     log INFO "========================================="
 
     # 1. 获取最新版本
     local version
-    version=$(get_latest_version)
+    if [[ -n "$VERSION" ]]; then
+        version="$VERSION"
+    else
+        version=$(get_latest_version)
+    fi
 
     if [[ -z "$version" ]]; then
-        log INFO "No version found"
+        log INFO "未找到版本"
         return 0
     fi
 
-    log INFO "Latest version: $version"
+    log INFO "版本: $version"
 
-    # 2. 检查是否已处理
-    if grep -qxF "$version" "$PROJECT_DIR/processed_versions.txt" 2>/dev/null; then
-        log INFO "Version $version already built, skipping"
-        return 0
+    # 2. 检查是否已处理（测试模式跳过检查）
+    if [[ "$TEST_MODE" != "true" ]]; then
+        if grep -qxF "$version" "$PROJECT_DIR/processed_versions.txt" 2>/dev/null; then
+            log INFO "版本 $version 已构建，跳过"
+            return 0
+        fi
+    else
+        log INFO "测试模式: 强制构建版本 $version"
     fi
 
-    log INFO "Version $version is new, building..."
+    log INFO "版本 $version 开始构建..."
 
     # 3. update.sh <version>
     run_update_script "$version"
@@ -49,14 +132,17 @@ main() {
     # 4. apply-templates.sh <version>
     run_apply_templates "$version"
 
-    # 5. 构建并推送
+    # 5. 构建（测试模式不推送）
     build_all_variants "$version"
 
-    # 6. 更新 processed_versions.txt
-    update_versions_file "$PROJECT_DIR/processed_versions.txt" "$version"
-
-    # 7. 提交并推送
-    git_commit_with_retry "$PROJECT_DIR" "$version"
+    # 6. 更新 processed_versions.txt（测试模式跳过）
+    if [[ "$TEST_MODE" != "true" ]]; then
+        update_versions_file "$PROJECT_DIR/processed_versions.txt" "$version"
+        git_commit_with_retry "$PROJECT_DIR" "$version"
+    else
+        log INFO "测试模式: 跳过 processed_versions.txt 更新"
+        log INFO "测试模式: 跳过 git commit"
+    fi
 }
 
 # ===== 获取最新版本 =====
@@ -69,7 +155,7 @@ get_latest_version() {
             fetch_from_script
             ;;
         *)
-            log ERROR "Unknown version source type: $VERSION_SOURCE_TYPE"
+            log ERROR "未知版本源类型: $VERSION_SOURCE_TYPE"
             exit 1
             ;;
     esac
@@ -77,7 +163,7 @@ get_latest_version() {
 
 # ===== 从 GitHub releases 获取最新版本 =====
 fetch_from_github_releases() {
-    log INFO "Fetching latest version from github.com/$VERSION_SOURCE_REPO"
+    log INFO "从 github.com/$VERSION_SOURCE_REPO 获取最新版本"
 
     gh api "repos/$VERSION_SOURCE_REPO/releases/latest" --jq '.tag_name' | \
     while read -r tag; do
@@ -92,11 +178,11 @@ fetch_from_script() {
     local script="$PROJECT_DIR/$VERSION_SOURCE_SCRIPT"
 
     if [[ ! -f "$script" ]]; then
-        log ERROR "Version script not found: $script"
+        log ERROR "版本脚本未找到: $script"
         exit 1
     fi
 
-    log INFO "Fetching latest version from script: $VERSION_SOURCE_SCRIPT"
+    log INFO "从脚本获取最新版本: $VERSION_SOURCE_SCRIPT"
 
     chmod +x "$script"
     "$script"
@@ -106,12 +192,7 @@ fetch_from_script() {
 run_update_script() {
     local version="$1"
 
-    log INFO "  Running update.sh $version"
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log INFO "  [DRY RUN] Would run: ./template/update.sh $version"
-        return 0
-    fi
+    log INFO "  执行 update.sh $version"
 
     cd "$PROJECT_DIR/template"
     ./update.sh "$version"
@@ -122,12 +203,7 @@ run_update_script() {
 run_apply_templates() {
     local version="$1"
 
-    log INFO "  Running apply-templates.sh $version"
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log INFO "  [DRY RUN] Would run: ./template/apply-templates.sh $version"
-        return 0
-    fi
+    log INFO "  执行 apply-templates.sh $version"
 
     cd "$PROJECT_DIR/template"
     ./apply-templates.sh "$version"
@@ -153,7 +229,7 @@ build_variant() {
     local build_dir="$PROJECT_DIR/template/$version/$variant"
 
     if [[ ! -f "$build_dir/Dockerfile" ]]; then
-        log WARN "Dockerfile not found: $build_dir/Dockerfile, skipping"
+        log WARN "Dockerfile 未找到: $build_dir/Dockerfile，跳过"
         return 0
     fi
 
@@ -169,14 +245,8 @@ build_variant() {
     fi
 
     # latest tag 逻辑：只在版本 >= 最新版本时更新
-    if should_update_latest "$version"; then
+    if [[ "$TEST_MODE" != "true" ]] && should_update_latest "$version"; then
         tags+=("$REGISTRY/$REPOSITORY:latest")
-    fi
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log INFO "  [DRY RUN] Would build:"
-        printf '    %s\n' "${tags[@]}"
-        return 0
     fi
 
     # 构建 tag 参数
@@ -185,21 +255,23 @@ build_variant() {
         tag_args="$tag_args -t $tag"
     done
 
-    log INFO "  Building with buildx: ${tags[0]}"
+    log INFO "  构建: ${tags[0]}"
     docker buildx build \
         --platform linux/loong64 \
         --load \
         $tag_args \
         "$build_dir"
 
-    # 推送所有 tags
-    if [[ "$DRY_RUN" != "local" ]]; then
-        log INFO "  Pushing..."
+    # 推送（测试模式跳过）
+    if [[ "$TEST_MODE" != "true" ]]; then
+        log INFO "  推送..."
         docker buildx build \
             --platform linux/loong64 \
             --push \
             $tag_args \
             "$build_dir"
+    else
+        log INFO "  测试模式: 跳过推送"
     fi
 }
 
@@ -238,21 +310,21 @@ git_commit_with_retry() {
         git commit -m "$(basename "$(pwd)"): add version $version" 2>/dev/null || true
 
         if git pull --rebase && git push origin main; then
-            log INFO "Successfully pushed"
+            log INFO "推送成功"
             cd - > /dev/null
             return 0
         fi
 
         retry=$((retry + 1))
         if [ $retry -lt $max_retries ]; then
-            log WARN "Push failed (attempt $retry/$max_retries), retrying..."
+            log WARN "推送失败 (第 $retry/$max_retries 次)，重试中..."
             git reset --soft HEAD~1 2>/dev/null || true
             git pull --rebase
             sleep $((retry * 2))
         fi
     done
 
-    log ERROR "Push failed after $max_retries attempts"
+    log ERROR "推送失败，已重试 $max_retries 次"
     cd - > /dev/null
     return 1
 }

@@ -5,7 +5,13 @@ project:
 
 version_source:
   type: script
-  script: fetch_versions.sh
+  script: get_latest_version.sh
+
+variants:
+  - name: ""
+    description: "Standard (full)"
+  - name: "slim"
+    description: "Minimal"
 
 push:
   registry: "lcr.loongnix.cn"

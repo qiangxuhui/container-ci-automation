@@ -19,7 +19,7 @@ if [[ ! "$VERSION" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
 fi
 
 # 读取 debian 版本
-DEBIAN_VERSION=$(cat "$(dirname "$0")/../debian.version")
+DEBIAN_VERSION=$(cat "$(dirname "$0")/debian.version")
 readonly -A DEBIAN_VERSIONS=(
     ["14"]="forky"
     ["13"]="trixie"
