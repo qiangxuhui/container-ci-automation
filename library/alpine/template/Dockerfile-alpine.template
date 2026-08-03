@@ -1,0 +1,10 @@
+FROM scratch
+
+LABEL maintainer="huajingyun@loongson.cn"
+LABEL org.opencontainers.image.version="{VERSION}"
+LABEL org.opencontainers.image.title="Alpine Linux {MINOR_VERSION}"
+LABEL org.opencontainers.image.description="Alpine Linux {MINOR_VERSION} for LoongArch64"
+
+ADD rootfs.tar.gz /
+
+CMD ["/bin/sh"]

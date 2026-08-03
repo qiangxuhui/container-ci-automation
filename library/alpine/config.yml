@@ -1,0 +1,21 @@
+# library/alpine/config.yml
+project:
+  org: library
+  name: alpine
+
+version_source:
+  type: script
+  script: get_latest_version.sh
+
+variants:
+  - name: "alpine"
+    template: "Dockerfile-alpine.template"
+    tags:
+      - "{major_version}"
+      - "{minor_version}"
+      - "{version}"
+      - "latest"
+
+push:
+  registry: "lcr.loongnix.cn"
+  repository: "library/alpine"
