@@ -10,10 +10,13 @@ version_source:
 variants:
   - name: "standard"
     template: "Dockerfile-standard.template"
-    description: "Standard (full)"
+    tags:
+      - "{version}"
+      - "latest"
   - name: "slim"
     template: "Dockerfile-slim.template"
-    description: "Minimal"
+    tags:
+      - "{version}-slim"
 
 push:
   registry: "lcr.loongnix.cn"

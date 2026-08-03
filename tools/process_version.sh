@@ -90,6 +90,11 @@ fi
 # 加载配置
 eval "$(parse_config "$PROJECT_DIR/config.yml")"
 
+# 解析 variants
+VARIANTS_FILE=$(mktemp)
+trap "rm -f $VARIANTS_FILE" EXIT
+parse_variants "$PROJECT_DIR/config.yml" "$VARIANTS_FILE"
+
 main() {
     log INFO "========================================="
     if [[ "$TEST_MODE" == "true" ]]; then
@@ -214,40 +219,39 @@ run_apply_templates() {
 build_all_variants() {
     local version="$1"
 
-    for variant_dir in "$PROJECT_DIR/template/$version"/*/; do
-        [[ -d "$variant_dir" ]] || continue
-        local variant
-        variant=$(basename "$variant_dir")
-        build_variant "$version" "$variant"
-    done
+    while IFS='|' read -r variant_name template_file tags_str; do
+        [[ -z "$variant_name" ]] && continue
+
+        local build_dir="$PROJECT_DIR/template/$version/$variant_name"
+
+        if [[ ! -d "$build_dir" ]]; then
+            log WARN "变体目录不存在: $build_dir，跳过"
+            continue
+        fi
+
+        build_variant "$version" "$variant_name" "$tags_str"
+    done < "$VARIANTS_FILE"
 }
 
 # ===== buildx 构建单个变体 =====
 build_variant() {
     local version="$1"
-    local variant="$2"
-    local build_dir="$PROJECT_DIR/template/$version/$variant"
+    local variant_name="$2"
+    local tags_str="$3"
+    local build_dir="$PROJECT_DIR/template/$version/$variant_name"
 
     if [[ ! -f "$build_dir/Dockerfile" ]]; then
         log WARN "Dockerfile 未找到: $build_dir/Dockerfile，跳过"
         return 0
     fi
 
-    # 构建 tags
+    # 渲染 tags：将 {version} 替换为实际版本号
     local tags=()
-    tags+=("$REGISTRY/$REPOSITORY:$version")
-
-    # 第一个变体不加后缀，其他变体加后缀
-    local first_variant
-    first_variant=$(ls "$PROJECT_DIR/template/$version/" | head -1)
-    if [[ "$variant" != "$first_variant" ]]; then
-        tags[0]="$REGISTRY/$REPOSITORY:$version-$variant"
-    fi
-
-    # latest tag 逻辑：只在版本 >= 最新版本时更新
-    if [[ "$TEST_MODE" != "true" ]] && should_update_latest "$version"; then
-        tags+=("$REGISTRY/$REPOSITORY:latest")
-    fi
+    IFS=',' read -ra tag_patterns <<< "$tags_str"
+    for pattern in "${tag_patterns[@]}"; do
+        local tag="${pattern//\{version\}/$version}"
+        tags+=("$REGISTRY/$REPOSITORY:$tag")
+    done
 
     # 构建 tag 参数
     local tag_args=""

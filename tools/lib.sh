@@ -65,3 +65,31 @@ print(f'VERSION_SOURCE_REPO="{vs.get("repository", "")}"')
 print(f'VERSION_SOURCE_SCRIPT="{vs.get("script", "")}"')
 PYEOF
 }
+
+# 解析 variants 配置，写入临时文件供 process_version.sh 使用
+# 输出格式（每行一个 variant）：
+#   variant_name|template_file|tag1,tag2,...
+parse_variants() {
+    local config_file="$1"
+    local output_file="$2"
+
+    python3 - "$config_file" "$output_file" << 'PYEOF'
+import yaml
+import sys
+
+config_file = sys.argv[1]
+output_file = sys.argv[2]
+
+with open(config_file) as f:
+    config = yaml.safe_load(f)
+
+variants = config.get('variants', [])
+with open(output_file, 'w') as f:
+    for v in variants:
+        name = v.get('name', '')
+        template = v.get('template', '')
+        tags = v.get('tags', [])
+        tags_str = ','.join(tags)
+        f.write(f'{name}|{template}|{tags_str}\n')
+PYEOF
+}
