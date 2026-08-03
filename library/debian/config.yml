@@ -1,0 +1,12 @@
+# library/debian/config.yml
+project:
+  org: library
+  name: debian
+
+version_source:
+  type: script
+  script: fetch_versions.sh
+
+push:
+  registry: "lcr.loongnix.cn"
+  repository: "library/debian"

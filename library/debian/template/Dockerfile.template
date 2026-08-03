@@ -1,0 +1,10 @@
+FROM scratch
+
+LABEL maintainer="znley<shanjiantao@loongson.cn>"
+LABEL org.opencontainers.image.version="{VERSION}"
+LABEL org.opencontainers.image.title="Debian {DEBIAN_VERSION_NAME}"
+LABEL org.opencontainers.image.description="Debian {SUITE} for LoongArch64"
+
+ADD rootfs.tar.xz /
+
+CMD ["/bin/bash"]
