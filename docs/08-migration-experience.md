@@ -94,7 +94,20 @@ CMD ["/bin/bash"]
 
 ## 遇到的问题
 
-### 1. parse_config Python 语法错误
+### 1. 脚本执行权限
+
+**问题**: 新建的 .sh 文件默认没有执行权限，导致 `./script.sh` 调用失败
+
+**解决**: 创建脚本后立即添加执行权限
+```bash
+chmod +x library/{project}/get_latest_version.sh
+chmod +x library/{project}/template/update.sh
+chmod +x library/{project}/template/apply-templates.sh
+```
+
+**注意**: git 会跟踪文件权限，确保脚本在提交前有 `+x` 权限
+
+### 2. parse_config Python 语法错误
 
 **问题**: f-string 中不能有反斜杠
 
@@ -111,13 +124,13 @@ config_file = sys.argv[1]
 PYEOF
 ```
 
-### 2. git push 失败（无远程仓库）
+### 3. git push 失败（无远程仓库）
 
 **问题**: 测试环境没有配置远程仓库
 
 **解决**: 使用 dry_run 模式测试，不执行 git push
 
-### 3. debian 特殊性
+### 4. debian 特殊性
 
 **问题**: debian 不使用标准模板系统，需要自定义 rootfs 构建流程
 
