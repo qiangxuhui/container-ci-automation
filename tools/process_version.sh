@@ -236,19 +236,11 @@ build_all_variants() {
 # ===== 计算版本变量 =====
 compute_version_vars() {
     local version="$1"
-    # 支持两种格式：
-    # 1. 语义版本: 3.24.1 → major=3, minor=3.24
-    # 2. 时间戳: 20260803T022142Z → major=20260803, minor=20260803T022142Z
+    # 语义版本: 3.24.1 → major=3, minor=3.24
     if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        # 语义版本: 3.24.1
         MAJOR_VERSION="${version%%.*}"
         MINOR_VERSION="${version%.*}"
-    elif [[ "$version" =~ ^[0-9]+T ]]; then
-        # 时间戳: 20260803T022142Z
-        MAJOR_VERSION="${version%%T*}"
-        MINOR_VERSION="$version"
     else
-        # 其他格式: 使用完整版本
         MAJOR_VERSION="$version"
         MINOR_VERSION="$version"
     fi
