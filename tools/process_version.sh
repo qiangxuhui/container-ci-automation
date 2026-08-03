@@ -233,6 +233,27 @@ build_all_variants() {
     done < "$VARIANTS_FILE"
 }
 
+# ===== 计算版本变量 =====
+compute_version_vars() {
+    local version="$1"
+    # 支持两种格式：
+    # 1. 语义版本: 3.24.1 → major=3, minor=3.24
+    # 2. 时间戳: 20260803T022142Z → major=20260803, minor=20260803T022142Z
+    if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        # 语义版本: 3.24.1
+        MAJOR_VERSION="${version%%.*}"
+        MINOR_VERSION="${version%.*}"
+    elif [[ "$version" =~ ^[0-9]+T ]]; then
+        # 时间戳: 20260803T022142Z
+        MAJOR_VERSION="${version%%T*}"
+        MINOR_VERSION="$version"
+    else
+        # 其他格式: 使用完整版本
+        MAJOR_VERSION="$version"
+        MINOR_VERSION="$version"
+    fi
+}
+
 # ===== buildx 构建单个变体 =====
 build_variant() {
     local version="$1"
@@ -245,11 +266,17 @@ build_variant() {
         return 0
     fi
 
-    # 渲染 tags：将 {version} 替换为实际版本号
+    # 计算版本变量
+    compute_version_vars "$version"
+
+    # 渲染 tags：替换 {version}, {major_version}, {minor_version}
     local tags=()
     IFS=',' read -ra tag_patterns <<< "$tags_str"
     for pattern in "${tag_patterns[@]}"; do
-        local tag="${pattern//\{version\}/$version}"
+        local tag="$pattern"
+        tag="${tag//\{version\}/$version}"
+        tag="${tag//\{major_version\}/$MAJOR_VERSION}"
+        tag="${tag//\{minor_version\}/$MINOR_VERSION}"
         tags+=("$REGISTRY/$REPOSITORY:$tag")
     done
 
