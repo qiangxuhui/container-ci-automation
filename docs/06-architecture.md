@@ -320,6 +320,41 @@ jobs:
         run: ./tools/process_version.sh library/ruby
 ```
 
+## 并发处理策略
+
+### 问题
+
+多个 workflow 并行触发时，多个 process_version.sh 实例可能同时修改 processed_versions.txt，导致 git 冲突。
+
+### 解决方案：乐观锁 + 自动重试
+
+1. 构建完成后提交时使用 `git pull --rebase`
+2. 如果冲突（其他 workflow 已提交），自动回滚、拉取最新、重新添加版本
+3. 最多重试 3 次
+
+```
+git add + commit
+    │
+    ▼
+git pull --rebase
+    │
+    ├── 成功 → git push → 完成
+    │
+    └── 失败（冲突）
+            │
+            ▼
+        git reset --soft HEAD~1
+            │
+            ▼
+        git pull --rebase（获取最新）
+            │
+            ▼
+        重新添加版本
+            │
+            ▼
+        重试 commit + push
+```
+
 ## buildx 初始化
 
 ```bash
