@@ -94,24 +94,4 @@ with open(output_file, 'w') as f:
 PYEOF
 }
 
-# 解析 gitignore 配置，写入 dockerfiles/.gitignore
-parse_gitignore() {
-    local config_file="$1"
-    local output_file="$2"
 
-    python3 - "$config_file" "$output_file" << 'PYEOF'
-import yaml
-import sys
-
-config_file = sys.argv[1]
-output_file = sys.argv[2]
-
-with open(config_file) as f:
-    config = yaml.safe_load(f)
-
-gitignore = config.get('gitignore', '')
-with open(output_file, 'w') as f:
-    if gitignore:
-        f.write(gitignore)
-PYEOF
-}

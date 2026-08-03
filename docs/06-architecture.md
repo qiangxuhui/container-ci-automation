@@ -1,4 +1,4 @@
-# 06 — 整体架构（v6.9）
+# 06 — 整体架构（v6.10）
 
 ## 目标架构
 
@@ -20,7 +20,7 @@ library/                            ← 项目目录
 │   │   ├── Dockerfile-slim-forky.template
 │   │   └── Dockerfile-alpine.template
 │   └── dockerfiles/                ← 生成的构建目录（CI 提交）
-│       ├── .gitignore              ← 由 config.yml gitignore 字段生成
+│       ├── .gitignore              ← 原生 gitignore，排除不需要提交的文件
 │       └── 4.0.6/
 │           ├── forky/
 │           │   └── Dockerfile
@@ -83,15 +83,6 @@ variants:
     tags:
       - "{version}-alpine"
 
-# dockerfiles 目录的 .gitignore 规则（可选）
-# 生成的文件中匹配这些规则的不会被提交
-gitignore: |
-  *.tar.xz
-  *.tar.xz.sha256
-  rootfs.*
-  Release
-  InRelease
-
 # 推送配置（必填）
 push:
   registry: "lcr.loongnix.cn"    # 镜像仓库地址
@@ -106,7 +97,6 @@ push:
 | `variants[].name` | 必须唯一，对应 `dockerfiles/{version}/{name}/` 目录名 |
 | `variants[].template` | 必须是 `Dockerfile-{variant}.template` 格式，且文件必须存在 |
 | `variants[].tags` | 至少一个标签，`{version}` 为唯一允许的变量占位符 |
-| `gitignore` | 可选，用于排除不需要提交的文件（如 rootfs.tar.xz） |
 | `push.registry` | 镜像推送目标，buildx 构建时使用 |
 | `push.repository` | 镜像仓库路径，与 registry 拼接为完整地址 |
 
@@ -192,16 +182,16 @@ CMD ["ruby", "--version"]
 
 ```
 {project}/dockerfiles/
-├── .gitignore                    ← 由 config.yml gitignore 字段生成
+├── .gitignore                    ← 原生 gitignore，排除不需要提交的文件
 └── {full_version}/               ← 每个版本一个目录
     └── {variant}/
         ├── Dockerfile            ← 渲染后的 Dockerfile
         └── {辅助文件}             ← 如 rootfs.tar.xz（可能被 .gitignore 排除）
 ```
 
-### .gitignore 生成
+### .gitignore
 
-process_version.sh 在 apply-templates.sh 执行后，读取 config.yml 的 `gitignore` 字段并写入 `dockerfiles/.gitignore`。
+使用原生 gitignore 机制，每个项目自行维护 `dockerfiles/.gitignore`。
 
 常见规则：
 - `*.tar.xz` — 排除 rootfs 压缩包
@@ -285,8 +275,6 @@ process_version.sh library/ruby
     │               dockerfiles/4.0.6/forky/Dockerfile
     │               dockerfiles/4.0.6/slim-forky/Dockerfile
     │               dockerfiles/4.0.6/alpine/Dockerfile
-    │
-    ├──→ setup_gitignore → dockerfiles/.gitignore
     │
     ├──→ buildx 构建
     │       │

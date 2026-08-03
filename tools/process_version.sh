@@ -137,10 +137,7 @@ main() {
     # 4. apply-templates.sh <version>
     run_apply_templates "$version"
 
-    # 5. 生成 dockerfiles/.gitignore
-    setup_gitignore
-
-    # 6. 构建（测试模式不推送）
+    # 5. 构建（测试模式不推送）
     build_all_variants "$version"
 
     # 7. 更新 processed_versions.txt（测试模式跳过）
@@ -216,13 +213,6 @@ run_apply_templates() {
     cd "$PROJECT_DIR/template"
     ./apply-templates.sh "$version"
     cd - > /dev/null
-}
-
-# ===== 生成 dockerfiles/.gitignore =====
-setup_gitignore() {
-    local dockerfiles_dir="$PROJECT_DIR/dockerfiles"
-    mkdir -p "$dockerfiles_dir"
-    parse_gitignore "$PROJECT_DIR/config.yml" "$dockerfiles_dir/.gitignore"
 }
 
 # ===== 构建所有变体 =====

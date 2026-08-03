@@ -1,0 +1,6 @@
+*.tar.xz
+*.tar.xz.sha256
+rootfs.*
+Release
+InRelease
+snapshot-url
