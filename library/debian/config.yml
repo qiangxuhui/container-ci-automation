@@ -18,6 +18,15 @@ variants:
     tags:
       - "{version}-slim"
 
+# dockerfiles 目录的 .gitignore 规则
+gitignore: |
+  *.tar.xz
+  *.tar.xz.sha256
+  rootfs.*
+  Release
+  InRelease
+  snapshot-url
+
 push:
   registry: "lcr.loongnix.cn"
   repository: "library/debian"

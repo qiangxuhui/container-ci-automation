@@ -137,10 +137,13 @@ main() {
     # 4. apply-templates.sh <version>
     run_apply_templates "$version"
 
-    # 5. 构建（测试模式不推送）
+    # 5. 生成 dockerfiles/.gitignore
+    setup_gitignore
+
+    # 6. 构建（测试模式不推送）
     build_all_variants "$version"
 
-    # 6. 更新 processed_versions.txt（测试模式跳过）
+    # 7. 更新 processed_versions.txt（测试模式跳过）
     if [[ "$TEST_MODE" != "true" ]]; then
         update_versions_file "$PROJECT_DIR/processed_versions.txt" "$version"
         git_commit_with_retry "$PROJECT_DIR" "$version"
@@ -215,6 +218,13 @@ run_apply_templates() {
     cd - > /dev/null
 }
 
+# ===== 生成 dockerfiles/.gitignore =====
+setup_gitignore() {
+    local dockerfiles_dir="$PROJECT_DIR/dockerfiles"
+    mkdir -p "$dockerfiles_dir"
+    parse_gitignore "$PROJECT_DIR/config.yml" "$dockerfiles_dir/.gitignore"
+}
+
 # ===== 构建所有变体 =====
 build_all_variants() {
     local version="$1"
@@ -222,7 +232,7 @@ build_all_variants() {
     while IFS='|' read -r variant_name template_file tags_str; do
         [[ -z "$variant_name" ]] && continue
 
-        local build_dir="$PROJECT_DIR/template/$version/$variant_name"
+        local build_dir="$PROJECT_DIR/dockerfiles/$version/$variant_name"
 
         if [[ ! -d "$build_dir" ]]; then
             log WARN "变体目录不存在: $build_dir，跳过"
@@ -238,7 +248,7 @@ build_variant() {
     local version="$1"
     local variant_name="$2"
     local tags_str="$3"
-    local build_dir="$PROJECT_DIR/template/$version/$variant_name"
+    local build_dir="$PROJECT_DIR/dockerfiles/$version/$variant_name"
 
     if [[ ! -f "$build_dir/Dockerfile" ]]; then
         log WARN "Dockerfile 未找到: $build_dir/Dockerfile，跳过"
@@ -308,7 +318,7 @@ git_commit_with_retry() {
     while [ $retry -lt $max_retries ]; do
         update_versions_file processed_versions.txt "$version"
 
-        git add processed_versions.txt
+        git add processed_versions.txt dockerfiles/
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git commit -m "$(basename "$(pwd)"): add version $version" 2>/dev/null || true

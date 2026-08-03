@@ -1,6 +1,6 @@
 #!/bin/bash
 # library/debian/template/apply-templates.sh
-# 接收版本号，生成 Dockerfile
+# 接收版本号，生成 Dockerfile 到 dockerfiles/ 目录
 set -eo pipefail
 
 VERSION="$1"
@@ -9,6 +9,12 @@ if [[ -z "$VERSION" ]]; then
     echo "Usage: $0 <version>"
     exit 1
 fi
+
+# 项目根目录（template 的上级目录）
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# 输出目录
+DOCKERFILES_DIR="$PROJECT_DIR/dockerfiles"
 
 # 读取 debian 版本
 DEBIAN_VERSION=$(cat "$(dirname "$0")/debian.version")
@@ -58,7 +64,7 @@ for variant_def in "${VARIANTS[@]}"; do
     echo "  处理变体: $variant"
 
     # 创建输出目录
-    mkdir -p "$VERSION/$variant"
+    mkdir -p "$DOCKERFILES_DIR/$VERSION/$variant"
 
     # 生成 Dockerfile
     sed -e "s/{VERSION}/$VERSION/g" \
@@ -66,10 +72,10 @@ for variant_def in "${VARIANTS[@]}"; do
         -e "s/{DEBIAN_VERSION_NAME}/$DEBIAN_VERSION_NAME/g" \
         -e "s/{SUITE}/$SUITE/g" \
         -e "s/{TIME_VERSION}/$TIME_VERSION/g" \
-        "$template_file" > "$VERSION/$variant/Dockerfile"
+        "$template_file" > "$DOCKERFILES_DIR/$VERSION/$variant/Dockerfile"
 
     # 复制 rootfs 到构建目录
-    cp "$rootfs_dir/rootfs.tar.xz" "$VERSION/$variant/"
+    cp "$rootfs_dir/rootfs.tar.xz" "$DOCKERFILES_DIR/$VERSION/$variant/"
 
-    echo "  生成: $VERSION/$variant/Dockerfile"
+    echo "  生成: dockerfiles/$VERSION/$variant/Dockerfile"
 done
