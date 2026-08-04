@@ -1,0 +1,18 @@
+# 迁移进度跟踪（个人使用）
+migration-status.md
+
+# 生成的文件
+**/versions.json
+**/dockerfiles/
+**/out/
+
+# 二进制文件
+*.tar.xz
+*.tar.gz
+*.tar.bz2
+*.zip
+*.rootfs
+
+# 大文件
+*.iso
+*.img

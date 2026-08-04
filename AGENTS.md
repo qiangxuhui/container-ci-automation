@@ -43,6 +43,7 @@ library/{project}/
 ## 已完成迁移
 
 - [x] library/debian（特殊项目，使用 debuerreotype）
+- [x] library/httpd（标准 Docker Library 项目，jq-template 转 sed）
 
 ## 待迁移项目
 

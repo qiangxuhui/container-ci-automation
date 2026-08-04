@@ -1,0 +1,24 @@
+# library/httpd/config.yml
+project:
+  org: library
+  name: httpd
+
+version_source:
+  type: script
+  script: get_latest_version.sh
+
+variants:
+  - name: "alpine"
+    template: "Dockerfile-alpine.template"
+    tags:
+      - "{version}"
+      - "{version}-alpine"
+      - "latest"
+  - name: "debian"
+    template: "Dockerfile-debian.template"
+    tags:
+      - "{version}-debian"
+
+push:
+  registry: "lcr.loongnix.cn"
+  repository: "library/httpd"
