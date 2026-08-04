@@ -81,3 +81,14 @@ update.sh → versions.json → apply-templates.sh → Dockerfile
 - **jq**: JSON 数据提取
 - **Python**: 仅用于多行文本生成，尽量避免
 - **执行权限**: 新建 .sh 文件必须 `chmod +x`
+
+## 基础镜像版本管理
+
+无论上游使用了几个基础镜像版本（如 alpine3.23、alpine3.24），本地仅构建一个最新版本。
+
+**原则**：
+1. **config.yml 中不体现基础镜像版本** — variant name 用 `debian`、`alpine`，不用 `forky`、`alpine3.24`
+2. **版本仅保留在 update.sh** — 作为变量（如 `debian_version="forky"`、`alpine_version="3.24"`）传递给模板
+3. **config.yml 中不出现多版本变体** — 不需要 `alpine3.23` + `alpine3.24` 两个变体
+
+**原因**：上游多版本是为了同时支持多个 Debian/Alpine 发行版，但本地只需维护最新版本即可。
