@@ -61,21 +61,24 @@ generate_variant() {
 
     echo "  processing $V_VERSION/$variant_name ..." >&2
 
-    export version="$RC_VERSION"
+    # from 保持原始值（alpine:3.24 / debian:forky-slim）
+    # 模板中 is_alpine 通过 startswith("alpine") 判断，不能加 registry 前缀
     export from="$from"
+    export version="$RC_VERSION"
     export variant="$php_variant"
     export cmd="$cmd"
     export alpineVer=""
     export suite=""
 
+    local docker_image_from=""
     if [[ "$from" == alpine:* ]]; then
         alpineVer="${from#alpine:}"
         suite="alpine${alpineVer}"
-        from="lcr.loongnix.cn/library/alpine:${alpineVer}"
+        docker_image_from="lcr.loongnix.cn/library/alpine:${alpineVer}"
     else
         suite="${from#debian:}"
         suite="${suite%-slim}"
-        from="lcr.loongnix.cn/library/debian:${suite}-slim"
+        docker_image_from="lcr.loongnix.cn/library/debian:${suite}-slim"
     fi
     export alpineVer suite
 
@@ -91,6 +94,11 @@ generate_variant() {
 EOH
         gawk -f "$JQT" "$SCRIPT_DIR/Dockerfile-linux.template"
     } > "$output_dir/Dockerfile"
+
+    # 替换 FROM 行，添加 registry 前缀
+    if [[ -n "$docker_image_from" ]]; then
+        sed -i "s|^FROM ${from}$|FROM ${docker_image_from}|" "$output_dir/Dockerfile"
+    fi
 
     # 复制辅助脚本
     cp -a \
@@ -115,7 +123,6 @@ EOH
     local dockerfile="$output_dir/Dockerfile"
 
     # 1) PHP 8.2 loongarch64 fiber 支持
-    #    将预下载的 assembly 文件复制到输出目录，用 COPY 指令引入
     if [[ "$RC_VERSION" == "8.2" ]]; then
         cp "$SCRIPT_DIR/jump_loongarch64_sysv_elf_gas.S" "$output_dir/"
         cp "$SCRIPT_DIR/make_loongarch64_sysv_elf_gas.S" "$output_dir/"
