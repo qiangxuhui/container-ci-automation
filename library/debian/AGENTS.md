@@ -1,79 +1,39 @@
-# debian — AGENTS.md
+# debian
 
-## 模板上游信息
+## 上游
 
-| 字段 | 值 |
-|------|-----|
-| 上游仓库 | docker-library/debian |
-| 上游分支 | master |
-| 上次同步 | 无（自定义 rootfs 构建） |
+- **仓库**: https://github.com/docker-library/debian
+- **特殊**: 使用 debuerreotype 构建 rootfs，不直接使用上游 Dockerfile
 
-## 本地适应性调整
+## 本地结构
 
-### 特殊说明
+```
+template/
+├── update.sh                 # debuerreotype 构建 rootfs + 生成 versions.json
+├── apply-templates.sh        # 读 versions.json，生成 Dockerfile + 复制 rootfs
+├── Dockerfile-standard.template
+├── Dockerfile-slim.template
+└── modify-rootfs-url.sh      # 修改 rootfs 源地址
+```
 
-debian 项目使用 debuerreotype 工具从 snapshot.debian.org 构建 rootfs，
-不是从上游 Dockerfile 构建。模板仅用于打包 rootfs 为 Docker 镜像。
+## 模板变量
 
-### Dockerfile.template
+| 占位符 | 来源 |
+|--------|------|
+| `{VERSION}` | 时间戳格式 `20250521T073957Z` |
+| `{DEBIAN_VERSION}` | update.sh 顶部定义（如 `14`） |
+| `{DEBIAN_VERSION_NAME}` | 从映射表获取（如 `forky`） |
+| `{SUITE}` | 固定 `unstable` |
+| `{TIME_VERSION}` | 从版本号提取日期部分 |
 
-- **FROM scratch**: 从零开始构建
-- **ADD rootfs.tar.xz**: 添加 rootfs 压缩包
-- **无上游对比**: 完全自定义
+## 上游更新
 
-## 构建流程
+1. 检查 snapshot.debian.org 是否有新的快照
+2. 如需调整 rootfs 源，修改 `modify-rootfs-url.sh`
+3. 如需支持新 Debian 版本，在 update.sh 的 `VERSION_NAMES` 映射中添加
 
-1. fetch_versions.sh: 从 snapshot.debian.org 获取最新快照版本
-2. update.sh: 使用 debuerreotype 构建 rootfs
-3. apply-templates.sh: 生成 Dockerfile（FROM scratch + ADD）
-4. docker buildx build: 构建 Docker 镜像
-5. docker push: 推送到 registry
+## 构建
 
-## 版本格式
-
-版本格式为时间戳: `20250521T073957Z`
-
-- 20250521: 日期
-- T: 分隔符
-- 073957: 时间
-- Z: UTC 时区
-
-## Tag 命名
-
-每个版本生成以下 tags:
-
-### 标准 tags
-
-- `14`: Debian 版本号
-- `forky`: Debian 代号
-- `unstable`: Suite 名称
-- `unstable-20250521`: Suite + 日期
-- `latest`: 最新版本
-
-### Slim tags
-
-- `14-slim`
-- `forky-slim`
-- `unstable-slim`
-- `unstable-20250521-slim`
-
-## 已知问题
-
-| 问题 | 影响 | 解决方案 |
-|------|------|----------|
-| snapshot.debian.org 过期 | apt-get 失败 | 修改 sources.list |
-| rootfs 构建慢 | CI 耗时长 | 使用 debuerreotype 缓存 |
-
-## 构建信息
-
-- **构建命令**: `./tools/process_version.sh library/debian`
-- **Dry run**: `DRY_RUN=true ./tools/process_version.sh library/debian`
-- **Registry**: `lcr.loongnix.cn`
-- **Repository**: `library/debian`
-- **平台**: `linux/loong64`
-
-## 依赖
-
-- debuerreotype/debuerreotype:latest
-- docker buildx
-- gh CLI
+```bash
+./tools/process_version.sh library/debian
+```
