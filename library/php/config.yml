@@ -1,0 +1,50 @@
+# library/php/config.yml
+project:
+  org: library
+  name: php
+
+version_source:
+  type: script
+  script: get_versions.sh
+
+variants:
+  - name: "debian"
+    template: "Dockerfile-linux.template"
+    tags:
+      - "{version}"
+      - "{minor_version}"
+      - "latest"
+  - name: "debian-apache"
+    template: "Dockerfile-linux.template"
+    tags:
+      - "{version}-apache"
+      - "{minor_version}-apache"
+  - name: "debian-fpm"
+    template: "Dockerfile-linux.template"
+    tags:
+      - "{version}-fpm"
+      - "{minor_version}-fpm"
+  - name: "debian-zts"
+    template: "Dockerfile-linux.template"
+    tags:
+      - "{version}-zts"
+      - "{minor_version}-zts"
+  - name: "alpine"
+    template: "Dockerfile-linux.template"
+    tags:
+      - "{version}-alpine"
+      - "{minor_version}-alpine"
+  - name: "alpine-fpm"
+    template: "Dockerfile-linux.template"
+    tags:
+      - "{version}-alpine-fpm"
+      - "{minor_version}-alpine-fpm"
+  - name: "alpine-zts"
+    template: "Dockerfile-linux.template"
+    tags:
+      - "{version}-alpine-zts"
+      - "{minor_version}-alpine-zts"
+
+push:
+  registry: "lcr.loongnix.cn"
+  repository: "library/php"
