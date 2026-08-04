@@ -147,11 +147,31 @@ EOH
 	fi; \
 LOONGPATCH
         local line_num
-        line_num=$(grep -nP '^\tcd /usr/src/php; ' "$dockerfile" | head -1 | cut -d: -f1)
+        line_num=$(grep -nP '^	cd /usr/src/php; ' "$dockerfile" | head -1 | cut -d: -f1)
         if [[ -n "$line_num" ]]; then
             sed -i "${line_num}r $tmpfile" "$dockerfile"
         fi
         rm -f "$tmpfile"
+
+        # Alpine loongarch64 需要 libucontext（musl 没有 swapcontext）
+        if [[ "$from" == alpine:* ]]; then
+            local uctx_tmpfile
+            uctx_tmpfile=$(mktemp)
+            cat > "$uctx_tmpfile" <<'UCTXBLOCK'
+        # Install libucontext and set LIBS for PHP 8.2/8.3 on loongarch64
+        if [ "$(uname -m)" = "loongarch64" ]; then \
+            apk add --no-cache libucontext-dev; \
+            export LIBS="-lucontext"; \
+        fi; \
+UCTXBLOCK
+            # 插入在 rm -vf /usr/include/iconv.h 之后
+            local iconv_line
+            iconv_line=$(grep -nP 'rm -vf /usr/include/iconv.h' "$dockerfile" | head -1 | cut -d: -f1)
+            if [[ -n "$iconv_line" ]]; then
+                sed -i "${iconv_line}r $uctx_tmpfile" "$dockerfile"
+            fi
+            rm -f "$uctx_tmpfile"
+        fi
     fi
 
     # 2) 禁用 pcre-jit（loongarch64 不支持）
