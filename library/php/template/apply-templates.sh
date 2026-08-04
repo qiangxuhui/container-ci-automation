@@ -115,19 +115,29 @@ EOH
     local dockerfile="$output_dir/Dockerfile"
 
     # 1) PHP 8.2 loongarch64 fiber 支持
+    #    将预下载的 assembly 文件复制到输出目录，用 COPY 指令引入
     if [[ "$RC_VERSION" == "8.2" ]]; then
+        cp "$SCRIPT_DIR/jump_loongarch64_sysv_elf_gas.S" "$output_dir/"
+        cp "$SCRIPT_DIR/make_loongarch64_sysv_elf_gas.S" "$output_dir/"
+
+        # COPY 必须在 RUN 块之前（顶层指令）
+        local run_line
+        run_line=$(grep -nP '^RUN set -eux; ' "$dockerfile" | tail -1 | cut -d: -f1)
+        if [[ -n "$run_line" ]]; then
+            local insert_line=$((run_line - 1))
+            sed -i "${insert_line}a COPY jump_loongarch64_sysv_elf_gas.S make_loongarch64_sysv_elf_gas.S /usr/src/php/Zend/asm/" "$dockerfile"
+        fi
+
+        # sed 修改 configure.ac（在 RUN 块内）
         local tmpfile
         tmpfile=$(mktemp)
         cat > "$tmpfile" <<'LOONGPATCH'
 	# Apply loongarch64 fiber support for PHP 8.2
 	if [ "$(uname -m)" = "loongarch64" ]; then \
-		curl -fsSL -o Zend/asm/jump_loongarch64_sysv_elf_gas.S 'https://raw.githubusercontent.com/nicholaskh/php-src/refs/heads/loongarch64-dev/Zend/asm/jump_loongarch64_sysv_elf_gas.S'; \
-		curl -fsSL -o Zend/asm/make_loongarch64_sysv_elf_gas.S 'https://raw.githubusercontent.com/nicholaskh/php-src/refs/heads/loongarch64-dev/Zend/asm/make_loongarch64_sysv_elf_gas.S'; \
 		sed -i '/s390x\*\], \[fiber_cpu/a\  [loongarch64*], [fiber_cpu="loongarch64"],' configure.ac; \
 		sed -i '/s390x\], \[fiber_asm_file_prefix/a\  [loongarch64], [fiber_asm_file_prefix="loongarch64_sysv"],' configure.ac; \
 	fi; \
 LOONGPATCH
-        # 找到 cd /usr/src/php; 行号，在其后插入
         local line_num
         line_num=$(grep -nP '^\tcd /usr/src/php; ' "$dockerfile" | head -1 | cut -d: -f1)
         if [[ -n "$line_num" ]]; then
