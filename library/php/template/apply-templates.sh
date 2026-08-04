@@ -83,6 +83,7 @@ generate_variant() {
     export alpineVer suite
 
     # 使用 jq-template.awk 渲染模板
+    # jq-template.awk 内部读取当前目录的 versions.json，必须 cd 到 template 目录
     {
         cat <<-'EOH'
 	#
@@ -92,7 +93,7 @@ generate_variant() {
 	#
 
 EOH
-        gawk -f "$JQT" "$SCRIPT_DIR/Dockerfile-linux.template"
+        cd "$SCRIPT_DIR" && gawk -f "$JQT" Dockerfile-linux.template
     } > "$output_dir/Dockerfile"
 
     # 替换 FROM 行，添加 registry 前缀
