@@ -69,6 +69,12 @@ update.sh → versions.json → apply-templates.sh → Dockerfile
 2. **写入 JSON**: 版本信息写入 `versions.json`，禁止使用单独的 `.version` 文件
 3. **精简原则**: versions.json 只存模板渲染需要的数据
 
+## 标签规范
+
+1. **latest 标签**: 始终放在 debian 变体上，作为默认/稳定版本
+2. **多变体项目**: debian 变体获得 `latest`，alpine/slim 变体不获得 `latest`
+3. **单变体项目**: 唯一变体获得 `latest`（如 alpine）
+
 ## LoongArch64 特殊约束
 
 1. **Debian 版本必须使用 forky** — LoongArch64 仅支持 Debian forky，不支持 trixie/bookworm 等。所有已迁移和后续迁移的项目，`debian_version` 统一设为 `forky`
