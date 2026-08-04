@@ -74,10 +74,12 @@ generate_variant() {
     if [[ "$from" == alpine:* ]]; then
         alpineVer="${from#alpine:}"
         suite="alpine${alpineVer}"
+        from="lcr.loongnix.cn/library/alpine:${alpineVer}"
     else
         # debian:forky-slim → suite="forky"
         suite="${from#debian:}"
         suite="${suite%-slim}"
+        from="lcr.loongnix.cn/library/debian:${suite}-slim"
     fi
     export alpineVer suite
 
@@ -114,6 +116,26 @@ EOH
     if [[ "$cmd_first" != "php" ]]; then
         sed -i -e "s! php ! $cmd_first !g" "$output_dir/docker-php-entrypoint"
     fi
+
+    # === LoongArch64 适配 ===
+    local dockerfile="$output_dir/Dockerfile"
+
+    # 1) PHP 8.2 loongarch64 补丁（在 docker-php-source extract 之后）
+    if [[ "$RC_VERSION" == "8.2" ]]; then
+        sed -i '/docker-php-source extract; \\/a\
+\t# Apply loongarch64 patch for PHP 8.2 only\
+\tif [ "$(uname -m)" = "loongarch64" ]; then \\\
+\t\tcurl -fsSL -o /php-8.2-loongarch.patch '"'"'https://patch-diff.githubusercontent.com/raw/php/php-src/pull/13914.patch'"'"'; \\\
+\t\tpatch -p1 < /php-8.2-loongarch.patch || { echo "Patch failed for PHP 8.2 on loongarch64"; exit 1; }; \\\
+\t\trm /php-8.2-loongarch.patch; \\\
+\tfi;' "$dockerfile"
+    fi
+
+    # 2) 禁用 pcre-jit（loongarch64 不支持）
+    # 在 ./configure 之前插入条件判断
+    sed -i '/^\t\.\/configure \\/i\
+\t# bundled pcre does not support JIT on loongarch64\
+\t$(case "$gnuArch" in *loongarch64*) echo '"'"'--without-pcre-jit'"'"' ;; esac) \\' "$dockerfile"
 
     echo "  dockerfiles/$V_VERSION/$variant_name/Dockerfile" >&2
 }
