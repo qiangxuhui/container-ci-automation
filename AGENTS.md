@@ -39,12 +39,10 @@ library/{project}/
 | `docs/08-migration-experience.md` | debian 项目迁移经验，包含问题和解决方案 |
 | `docs/01-declarative-config.md` | config.yml 格式规范 |
 | `docs/03-unified-tools.md` | 统一工具设计文档 |
-
-## 已完成迁移
-
-- [x] library/debian（特殊项目，使用 debuerreotype）
-- [x] library/httpd（标准 Docker Library 项目，jq-template 转 sed）
+| `migration-status.md` | 迁移进度跟踪 |
 
 ## 待迁移项目
+
+未迁移项目清单见 `migration-status.md`。
 
 参考 `docs/08-migration-experience.md` 中的经验进行迁移。

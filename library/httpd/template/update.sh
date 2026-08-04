@@ -20,7 +20,7 @@ else
 fi
 
 alpine='3.22'
-debian='trixie'
+debian='forky'
 
 # 获取 sha256
 sha256=$(wget -qO- "https://downloads.apache.org/httpd/httpd-$VERSION.tar.bz2.sha256" | cut -d' ' -f1)

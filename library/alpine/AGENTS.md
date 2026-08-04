@@ -23,7 +23,7 @@ alpine 项目直接从 Alpine 官方下载 minirootfs，不是从上游 Dockerfi
 
 ## 构建流程
 
-1. get_latest_version.sh: 从 cz.alpinelinux.org 获取最新版本
+1. get_versions.sh: 从 cz.alpinelinux.org 获取最新版本
 2. update.sh: 下载 minirootfs
 3. apply-templates.sh: 生成 Dockerfile（FROM scratch + ADD）
 4. docker buildx build: 构建 Docker 镜像

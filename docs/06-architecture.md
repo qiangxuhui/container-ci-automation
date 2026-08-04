@@ -12,7 +12,7 @@ library/                            ← 项目目录
 │   ├── AGENTS.md                   ← AI agent 上下文
 │   ├── config.yml                  ← 声明式配置（强约束）
 │   ├── processed_versions.txt      ← 版本跟踪
-│   ├── get_latest_version.sh       ← 自定义版本脚本（可选）
+│   ├── get_versions.sh       ← 自定义版本脚本（可选）
 │   ├── template/
 │   │   ├── update.sh               ← 项目专属：处理变量
 │   │   ├── apply-templates.sh      ← 项目专属：应用模板生成 Dockerfile
@@ -39,7 +39,7 @@ library/                            ← 项目目录
 ## 关键约束
 
 1. **process_version.sh 流程强制统一**
-2. **每次 CI 只执行一个版本** — fetch_versions.sh 只输出最新版本（1 行）
+2. **项目可处理多个版本** — get_versions.sh 输出多行时，process_version.sh 逐个处理
 3. **tags 由 config.yml 声明** — process_version.sh 渲染 `{version}` 变量
 4. **使用 buildx 构建** — `--platform linux/loong64`
 5. **并行由 GitHub 触发**
@@ -65,7 +65,7 @@ version_source:
   type: github_releases           # github_releases | script
   repository: "ruby/ruby"         # type=github_releases 时必填
   tag_regex: "^v([0-9]+\\.[0-9]+\\.[0-9]+)$"  # type=github_releases 时必填
-  script: get_latest_version.sh   # type=script 时必填
+  script: get_versions.sh   # type=script 时必填
 
 # 变体定义（必填，至少一个）
 variants:
@@ -266,7 +266,7 @@ DRY_RUN=true ./tools/process_version.sh library/ruby
 ```
 process_version.sh library/ruby
     │
-    ├──→ get_latest_version.sh → "4.0.6"
+    ├──→ get_versions.sh → "4.0.6"
     │
     ├──→ grep "4.0.6" processed_versions.txt
     │       │

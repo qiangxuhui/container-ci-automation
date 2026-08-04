@@ -1,5 +1,5 @@
 #!/bin/bash
-# library/alpine/get_latest_version.sh
+# library/alpine/get_versions.sh
 # 输出最新版本号（1 行）
 set -eo pipefail
 

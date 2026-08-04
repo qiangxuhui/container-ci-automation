@@ -5,7 +5,7 @@ project:
 
 version_source:
   type: script
-  script: get_latest_version.sh
+  script: get_versions.sh
 
 variants:
   - name: "alpine"

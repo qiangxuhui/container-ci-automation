@@ -69,6 +69,12 @@ update.sh → versions.json → apply-templates.sh → Dockerfile
 2. **写入 JSON**: 版本信息写入 `versions.json`，禁止使用单独的 `.version` 文件
 3. **精简原则**: versions.json 只存模板渲染需要的数据
 
+## LoongArch64 特殊约束
+
+1. **Debian 版本必须使用 forky** — LoongArch64 仅支持 Debian forky，不支持 trixie/bookworm 等。所有已迁移和后续迁移的项目，`debian_version` 统一设为 `forky`
+2. **node 项目特殊处理** — Node.js 官方无 loong64 预编译二进制，需从 unofficial-builds.nodejs.org 获取
+3. **Alpine 源码编译** — Node.js Alpine 变体无 loong64 musl 预编译二进制，需从源码编译（2026-08-04：编译报错，已暂时禁用）
+
 ## 工具规范
 
 - **sed**: 简单单行替换（{VERSION}, {SHA256} 等）

@@ -21,7 +21,7 @@ usage() {
 模式说明:
   默认模式:
     ./tools/process_version.sh library/ruby
-    - 获取最新版本
+    - 获取版本列表（支持多版本）
     - 检查是否已构建
     - 未构建则执行构建
     - 推送镜像
@@ -104,54 +104,59 @@ main() {
     fi
     log INFO "========================================="
 
-    # 1. 获取最新版本
-    local version
+    # 1. 获取版本列表
+    local versions=()
     if [[ -n "$VERSION" ]]; then
-        version="$VERSION"
+        versions=("$VERSION")
     else
-        version=$(get_latest_version)
+        while IFS= read -r ver; do
+            [[ -n "$ver" ]] && versions+=("$ver")
+        done < <(get_versions)
     fi
 
-    if [[ -z "$version" ]]; then
+    if [[ ${#versions[@]} -eq 0 ]]; then
         log INFO "未找到版本"
         return 0
     fi
 
-    log INFO "版本: $version"
+    log INFO "版本: ${versions[*]}"
 
-    # 2. 检查是否已处理（测试模式跳过检查）
-    if [[ "$TEST_MODE" != "true" ]]; then
-        if grep -qxF "$version" "$PROJECT_DIR/processed_versions.txt" 2>/dev/null; then
-            log INFO "版本 $version 已构建，跳过"
-            return 0
+    # 2. 逐个处理版本
+    for version in "${versions[@]}"; do
+        # 检查是否已处理（测试模式跳过检查）
+        if [[ "$TEST_MODE" != "true" ]]; then
+            if grep -qxF "$version" "$PROJECT_DIR/processed_versions.txt" 2>/dev/null; then
+                log INFO "版本 $version 已构建，跳过"
+                continue
+            fi
+        else
+            log INFO "测试模式: 强制构建版本 $version"
         fi
-    else
-        log INFO "测试模式: 强制构建版本 $version"
-    fi
 
-    log INFO "版本 $version 开始构建..."
+        log INFO "版本 $version 开始构建..."
 
-    # 3. update.sh <version>
-    run_update_script "$version"
+        # 3. update.sh <version>
+        run_update_script "$version"
 
-    # 4. apply-templates.sh <version>
-    run_apply_templates "$version"
+        # 4. apply-templates.sh <version>
+        run_apply_templates "$version"
 
-    # 5. 构建（测试模式不推送）
-    build_all_variants "$version"
+        # 5. 构建（测试模式不推送）
+        build_all_variants "$version"
 
-    # 7. 更新 processed_versions.txt（测试模式跳过）
-    if [[ "$TEST_MODE" != "true" ]]; then
-        update_versions_file "$PROJECT_DIR/processed_versions.txt" "$version"
-        git_commit_with_retry "$PROJECT_DIR" "$version"
-    else
-        log INFO "测试模式: 跳过 processed_versions.txt 更新"
-        log INFO "测试模式: 跳过 git commit"
-    fi
+        # 6. 更新 processed_versions.txt（测试模式跳过）
+        if [[ "$TEST_MODE" != "true" ]]; then
+            update_versions_file "$PROJECT_DIR/processed_versions.txt" "$version"
+            git_commit_with_retry "$PROJECT_DIR" "$version"
+        else
+            log INFO "测试模式: 跳过 processed_versions.txt 更新"
+            log INFO "测试模式: 跳过 git commit"
+        fi
+    done
 }
 
-# ===== 获取最新版本 =====
-get_latest_version() {
+# ===== 获取版本列表（支持多行输出）=====
+get_versions() {
     case "$VERSION_SOURCE_TYPE" in
         github_releases)
             fetch_from_github_releases
