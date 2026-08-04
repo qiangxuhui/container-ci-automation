@@ -1,0 +1,31 @@
+# library/erlang/config.yml
+project:
+  org: library
+  name: erlang
+
+version_source:
+  type: script
+  script: get_versions.sh
+
+variants:
+  - name: "debian"
+    template: "Dockerfile-debian.template"
+    tags:
+      - "{version}"
+      - "{major_version}"
+      - "{version}-debian"
+      - "latest"
+  - name: "debian-slim"
+    template: "Dockerfile-debian-slim.template"
+    tags:
+      - "{version}-slim"
+      - "{major_version}-slim"
+  - name: "alpine"
+    template: "Dockerfile-alpine.template"
+    tags:
+      - "{version}-alpine"
+      - "{major_version}-alpine"
+
+push:
+  registry: "lcr.loongnix.cn"
+  repository: "library/erlang"
