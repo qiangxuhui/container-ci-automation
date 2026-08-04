@@ -120,15 +120,15 @@ EOH
     # === LoongArch64 适配 ===
     local dockerfile="$output_dir/Dockerfile"
 
-    # 1) PHP 8.2 loongarch64 补丁（在 docker-php-source extract 之后）
+    # 1) PHP 8.2 loongarch64 补丁（在 cd /usr/src/php 之后）
     if [[ "$RC_VERSION" == "8.2" ]]; then
-        sed -i '/docker-php-source extract; \\/a\
+        sed -i '/cd \/usr\/src\/php; \\/a\
 \t# Apply loongarch64 patch for PHP 8.2 only\
 \tif [ "$(uname -m)" = "loongarch64" ]; then \\\
 \t\tcurl -fsSL -o /php-8.2-loongarch.patch '"'"'https://patch-diff.githubusercontent.com/raw/php/php-src/pull/13914.patch'"'"'; \\\
 \t\tpatch -p1 < /php-8.2-loongarch.patch || { echo "Patch failed for PHP 8.2 on loongarch64"; exit 1; }; \\\
 \t\trm /php-8.2-loongarch.patch; \\\
-\tfi;' "$dockerfile"
+\tfi; \\' "$dockerfile"
     fi
 
     # 2) 禁用 pcre-jit（loongarch64 不支持）
