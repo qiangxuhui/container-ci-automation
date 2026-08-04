@@ -51,19 +51,16 @@ fi
 
 # === 生成 Dockerfile 的函数 ===
 generate_variant() {
-    local variant_name="$1"    # e.g., "debian", "debian-apache", "alpine-fpm"
-    local from="$2"            # e.g., "debian:forky-slim", "alpine:3.24"
-    local php_variant="$3"     # e.g., "cli", "apache", "fpm", "zts"
-    local cmd="$4"             # e.g., '["php", "-a"]', '["apache2-foreground"]'
+    local variant_name="$1"
+    local from="$2"
+    local php_variant="$3"
+    local cmd="$4"
 
     local output_dir="$DOCKERFILES_DIR/$V_VERSION/$variant_name"
     mkdir -p "$output_dir"
 
     echo "  processing $V_VERSION/$variant_name ..." >&2
 
-    # 设置 jq-template.awk 需要的环境变量
-    # version: 模板中 env.version 用于 JSON 查找 .[env.version] 和 GPG keys 查找
-    #          必须使用 major.minor 格式（如 "8.4"），与 versions.json 的 key 一致
     export version="$RC_VERSION"
     export from="$from"
     export variant="$php_variant"
@@ -76,7 +73,6 @@ generate_variant() {
         suite="alpine${alpineVer}"
         from="lcr.loongnix.cn/library/alpine:${alpineVer}"
     else
-        # debian:forky-slim → suite="forky"
         suite="${from#debian:}"
         suite="${suite%-slim}"
         from="lcr.loongnix.cn/library/debian:${suite}-slim"
@@ -105,12 +101,10 @@ EOH
         "$SCRIPT_DIR/docker-php-source" \
         "$output_dir/"
 
-    # apache 变体需要额外复制 apache2-foreground
     if [[ "$php_variant" == "apache" ]]; then
         cp -a "$SCRIPT_DIR/apache2-foreground" "$output_dir/"
     fi
 
-    # 修改 entrypoint（apache/fpm 变体）
     local cmd_first
     cmd_first=$(jq -r '.[0]' <<< "$cmd")
     if [[ "$cmd_first" != "php" ]]; then
@@ -120,35 +114,52 @@ EOH
     # === LoongArch64 适配 ===
     local dockerfile="$output_dir/Dockerfile"
 
-    # 1) PHP 8.2 loongarch64 补丁（在 cd /usr/src/php 之后）
+    # 1) PHP 8.2 loongarch64 fiber 支持
     if [[ "$RC_VERSION" == "8.2" ]]; then
-        sed -i '/cd \/usr\/src\/php; \\/a\
-\t# Apply loongarch64 patch for PHP 8.2 only\
-\tif [ "$(uname -m)" = "loongarch64" ]; then \\\
-\t\tcurl -fsSL -o /php-8.2-loongarch.patch '"'"'https://patch-diff.githubusercontent.com/raw/php/php-src/pull/13914.patch'"'"'; \\\
-\t\tpatch -p1 < /php-8.2-loongarch.patch || { echo "Patch failed for PHP 8.2 on loongarch64"; exit 1; }; \\\
-\t\trm /php-8.2-loongarch.patch; \\\
-\tfi; \\' "$dockerfile"
+        local tmpfile
+        tmpfile=$(mktemp)
+        cat > "$tmpfile" <<'LOONGPATCH'
+	# Apply loongarch64 fiber support for PHP 8.2
+	if [ "$(uname -m)" = "loongarch64" ]; then \
+		curl -fsSL -o Zend/asm/jump_loongarch64_sysv_elf_gas.S 'https://raw.githubusercontent.com/nicholaskh/php-src/refs/heads/loongarch64-dev/Zend/asm/jump_loongarch64_sysv_elf_gas.S'; \
+		curl -fsSL -o Zend/asm/make_loongarch64_sysv_elf_gas.S 'https://raw.githubusercontent.com/nicholaskh/php-src/refs/heads/loongarch64-dev/Zend/asm/make_loongarch64_sysv_elf_gas.S'; \
+		sed -i '/s390x\*\], \[fiber_cpu/a\  [loongarch64*], [fiber_cpu="loongarch64"],' configure.ac; \
+		sed -i '/s390x\], \[fiber_asm_file_prefix/a\  [loongarch64], [fiber_asm_file_prefix="loongarch64_sysv"],' configure.ac; \
+	fi; \
+LOONGPATCH
+        # 找到 cd /usr/src/php; 行号，在其后插入
+        local line_num
+        line_num=$(grep -nP '^\tcd /usr/src/php; ' "$dockerfile" | head -1 | cut -d: -f1)
+        if [[ -n "$line_num" ]]; then
+            sed -i "${line_num}r $tmpfile" "$dockerfile"
+        fi
+        rm -f "$tmpfile"
     fi
 
     # 2) 禁用 pcre-jit（loongarch64 不支持）
-    # 在 ./configure 之前插入条件判断
-    sed -i '/^\t\.\/configure \\/i\
-\t# bundled pcre does not support JIT on loongarch64\
-\t$(case "$gnuArch" in *loongarch64*) echo '"'"'--without-pcre-jit'"'"' ;; esac) \\' "$dockerfile"
+    local pcre_tmpfile
+    pcre_tmpfile=$(mktemp)
+    cat > "$pcre_tmpfile" <<'PCREBLOCK'
+	# bundled pcre does not support JIT on loongarch64
+	$(case "$gnuArch" in *loongarch64*) echo '--without-pcre-jit' ;; esac) \
+PCREBLOCK
+    local configure_line
+    configure_line=$(grep -nP '^\t\.\/configure ' "$dockerfile" | head -1 | cut -d: -f1)
+    if [[ -n "$configure_line" ]]; then
+        sed -i "${configure_line}r $pcre_tmpfile" "$dockerfile"
+    fi
+    rm -f "$pcre_tmpfile"
 
     echo "  dockerfiles/$V_VERSION/$variant_name/Dockerfile" >&2
 }
 
 # === 生成所有变体 ===
 
-# Debian 变体
 generate_variant "debian" "debian:${V_DEBIAN}-slim" "cli" '["php", "-a"]'
 generate_variant "debian-apache" "debian:${V_DEBIAN}-slim" "apache" '["apache2-foreground"]'
 generate_variant "debian-fpm" "debian:${V_DEBIAN}-slim" "fpm" '["php-fpm"]'
 generate_variant "debian-zts" "debian:${V_DEBIAN}-slim" "zts" '["php", "-a"]'
 
-# Alpine 变体（无 apache）
 generate_variant "alpine" "alpine:${V_ALPINE}" "cli" '["php", "-a"]'
 generate_variant "alpine-fpm" "alpine:${V_ALPINE}" "fpm" '["php-fpm"]'
 generate_variant "alpine-zts" "alpine:${V_ALPINE}" "zts" '["php", "-a"]'
