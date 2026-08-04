@@ -1,0 +1,32 @@
+# library/ruby/config.yml
+project:
+  org: library
+  name: ruby
+
+version_source:
+  type: script
+  script: get_versions.sh
+
+variants:
+  - name: "debian"
+    template: "Dockerfile-debian.template"
+    tags:
+      - "{version}"
+      - "{minor_version}"
+      - "{version}-forky"
+      - "latest"
+  - name: "debian-slim"
+    template: "Dockerfile-debian-slim.template"
+    tags:
+      - "{version}-slim"
+      - "{minor_version}-slim"
+      - "{version}-debian-slim"
+  - name: "alpine"
+    template: "Dockerfile-alpine.template"
+    tags:
+      - "{version}-alpine"
+      - "{minor_version}-alpine"
+
+push:
+  registry: "lcr.loongnix.cn"
+  repository: "library/ruby"
