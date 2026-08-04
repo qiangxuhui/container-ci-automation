@@ -51,7 +51,7 @@ eval "$(echo "$V" | jq -r '
 ')"
 
 # 从 versions.json 读取 alpine 版本列表
-V_ALPINE_LIST=$(echo "$V" | jq -r '.alpine_version')
+V_ALPINE=$(echo "$V" | jq -r '.alpine_version')
 
 echo "Generating Dockerfiles for golang $V_VERSION"
 
@@ -82,15 +82,13 @@ SED_ARGS=(
 # Debian 变体
 mkdir -p "$DOCKERFILES_DIR/$VERSION/$V_DEBIAN"
 sed "${SED_ARGS[@]}" \
-    "$SCRIPT_DIR/Dockerfile-forky.template" > "$DOCKERFILES_DIR/$VERSION/$V_DEBIAN/Dockerfile"
+    "$SCRIPT_DIR/Dockerfile-debian.template" > "$DOCKERFILES_DIR/$VERSION/$V_DEBIAN/Dockerfile"
 echo "  dockerfiles/$VERSION/$V_DEBIAN/Dockerfile"
 
 # Alpine 变体
-for VER in $V_ALPINE_LIST; do
-    mkdir -p "$DOCKERFILES_DIR/$VERSION/alpine${VER}"
-    sed "${SED_ARGS[@]}" -e "s/{ALPINE_VERSION}/$VER/g" \
-        "$SCRIPT_DIR/Dockerfile-alpine.template" > "$DOCKERFILES_DIR/$VERSION/alpine${VER}/Dockerfile"
-    echo "  dockerfiles/$VERSION/alpine${VER}/Dockerfile"
-done
+mkdir -p "$DOCKERFILES_DIR/$VERSION/alpine"
+sed "${SED_ARGS[@]}" -e "s/{ALPINE_VERSION}/$V_ALPINE/g" \
+    "$SCRIPT_DIR/Dockerfile-alpine.template" > "$DOCKERFILES_DIR/$VERSION/alpine/Dockerfile"
+echo "  dockerfiles/$VERSION/alpine/Dockerfile"
 
 echo "Done."

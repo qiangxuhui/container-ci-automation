@@ -18,7 +18,7 @@ update.sh                    # 调用 versions.sh + apply-templates.sh
 
 | 上游 | 本地 | 说明 |
 |------|------|------|
-| `Dockerfile-linux.template` | `template/Dockerfile-forky.template` | case 语句 + `{URL_xxx}` `{SHA256_xxx}` 占位符 |
+| `Dockerfile-linux.template` | `template/Dockerfile-debian.template` | case 语句 + `{URL_xxx}` `{SHA256_xxx}` 占位符 |
 | 同上 | `template/Dockerfile-alpine.template` | 架构名不同（x86_64, armv7, loongarch64） |
 | `versions.sh` | `template/update.sh` | wget + jq，获取所有架构下载信息 |
 | `apply-templates.sh` | `template/apply-templates.sh` | jq 提取 + sed 渲染 |

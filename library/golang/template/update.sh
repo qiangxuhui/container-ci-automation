@@ -20,7 +20,7 @@ else
 fi
 
 # 变体版本（按需修改）
-alpine_versions="3.22 3.23"
+alpine_version="3.24"
 debian_version="forky"
 
 # 从 API 获取数据
@@ -66,7 +66,7 @@ echo "version: $VERSION" >&2
 
 # 添加变体版本信息
 new_data=$(echo "$new_data" | jq -c \
-    --arg alpine "$alpine_versions" \
+    --arg alpine "$alpine_version" \
     --arg debian "$debian_version" \
     '. + {alpine_version: $alpine, debian_version: $debian}')
 

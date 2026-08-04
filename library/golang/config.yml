@@ -8,21 +8,15 @@ version_source:
   script: get_versions.sh
 
 variants:
-  - name: "forky"
-    template: "Dockerfile-forky.template"
+  - name: "debian"
+    template: "Dockerfile-debian.template"
     tags:
       - "{version}"
-      - "{version}-forky"
       - "latest"
-  - name: "alpine3.22"
+  - name: "alpine"
     template: "Dockerfile-alpine.template"
     tags:
       - "{version}-alpine"
-      - "{version}-alpine3.22"
-  - name: "alpine3.23"
-    template: "Dockerfile-alpine.template"
-    tags:
-      - "{version}-alpine3.23"
 
 push:
   registry: "lcr.loongnix.cn"
