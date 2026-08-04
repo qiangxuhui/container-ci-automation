@@ -1,5 +1,55 @@
 # 迁移规范
 
+## 迁移流程（上游模板项目 → 本地模板项目）
+
+### 第一步：分析上游仓库
+
+1. 阅读上游 README，了解项目用途和构建方式
+2. 查看目录结构，找到模板文件和渲染脚本
+3. 阅读上游 `update.sh` / `versions.sh` / `apply-templates.sh`，理解版本获取和渲染逻辑
+4. 运行上游脚本，查看最终生成的 Dockerfile
+
+### 第二步：提取模板变量
+
+1. 对比上游最终生成的 Dockerfile，找出与版本变化有关的值
+2. 将这些值替换为 `{VAR}` 占位符
+3. 常见变量：
+   - `{VERSION}` — 软件版本号
+   - `{SHA256}` — 下载文件校验和
+   - `{ALPINE_VERSION}` / `{DEBIAN_VERSION}` — 基础镜像版本
+   - `{URL_xxx}` — 下载链接（多架构项目）
+4. 按基础系统分离模板：`Dockerfile-debian.template` / `Dockerfile-alpine.template`
+5. FROM 指令添加 `lcr.loongnix.cn/library/` 前缀
+
+### 第三步：编写 update.sh
+
+1. 在脚本顶部定义变体版本：
+   ```bash
+   alpine_versions="3.22 3.23"
+   debian_version="forky"
+   ```
+2. 从上游 API 或下载站获取版本信息
+3. 生成 `versions.json`，包含：
+   - `version` — 软件版本号
+   - `alpine_version` / `debian_version` — 基础镜像版本
+   - 模板中 `{VAR}` 对应的所有值
+4. 禁止使用单独的 `.version` 文件
+
+### 第四步：编写 apply-templates.sh
+
+1. 从 `versions.json` 读取变量（使用 jq）
+2. 使用 sed 渲染模板，替换所有 `{VAR}` 占位符
+3. 输出到 `dockerfiles/$version/$variant/Dockerfile`
+
+### 第五步：验证
+
+1. 语法检查：`bash -n template/*.sh`
+2. 运行 `update.sh` 生成 `versions.json`
+3. 运行 `apply-templates.sh` 生成 Dockerfile
+4. 对比生成的 Dockerfile 与上游，确认功能逻辑一致
+
+---
+
 ## 强制流程
 
 ```
