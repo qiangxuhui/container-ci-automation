@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -11,6 +12,23 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+
+
+# ── 平台检测 ────────────────────────────────────────────────────────
+
+# platform.machine() → Docker platform arch 映射
+ARCH_MAP = {
+    "x86_64": "amd64",
+    "aarch64": "arm64",
+    "loongarch64": "loong64",
+}
+
+
+def get_platform() -> str:
+    """返回当前系统的 Docker 平台，如 linux/amd64"""
+    machine = platform.machine()
+    arch = ARCH_MAP.get(machine, machine)
+    return f"linux/{arch}"
 
 
 # ── 日志 ────────────────────────────────────────────────────────────
@@ -176,29 +194,36 @@ def build_variant(
         return
 
     vars_ = compute_version_vars(version)
-    repo = f"{cfg.registry}/{cfg.repository}"
-    full_tags = [f"{repo}:{render_tag(t, vars_)}" for t in tags]
+    platform = get_platform()
 
-    tag_args = []
-    for t in full_tags:
-        tag_args.extend(["-t", t])
+    # 构建时仅用 org/name，不带 registry 前缀
+    build_tags = [f"{cfg.repository}:{render_tag(t, vars_)}" for t in tags]
+    # 推送时加上 registry 前缀
+    push_tags = [f"{cfg.registry}/{cfg.repository}:{render_tag(t, vars_)}" for t in tags]
 
-    log("INFO", f"  构建: {full_tags[0]}")
+    build_tag_args = []
+    for t in build_tags:
+        build_tag_args.extend(["-t", t])
+
+    log("INFO", f"  构建: {build_tags[0]}")
     if dry_run:
-        log("INFO", f"  [dry-run] docker buildx build --platform linux/loong64 --load {' '.join(tag_args)} {build_dir}")
+        log("INFO", f"  [dry-run] docker buildx build --platform {platform} --load {' '.join(build_tag_args)} {build_dir}")
+        if not test_mode:
+            for bt, pt in zip(build_tags, push_tags):
+                log("INFO", f"  [dry-run] docker tag {bt} {pt}")
+                log("INFO", f"  [dry-run] docker push {pt}")
         return
 
     subprocess.run(
-        ["docker", "buildx", "build", "--platform", "linux/loong64", "--load", *tag_args, str(build_dir)],
+        ["docker", "buildx", "build", "--platform", platform, "--load", *build_tag_args, str(build_dir)],
         check=True,
     )
 
     if not test_mode:
-        log("INFO", f"  推送...")
-        subprocess.run(
-            ["docker", "buildx", "build", "--platform", "linux/loong64", "--push", *tag_args, str(build_dir)],
-            check=True,
-        )
+        log("INFO", f"  推送: {push_tags[0]}")
+        for bt, pt in zip(build_tags, push_tags):
+            subprocess.run(["docker", "tag", bt, pt], check=True)
+            subprocess.run(["docker", "push", pt], check=True)
     else:
         log("INFO", "  测试模式: 跳过推送")
 
