@@ -44,5 +44,5 @@ update.sh                     # sed 直接改 Dockerfile 中的版本号
 ## 构建
 
 ```bash
-./tools/process_version.sh library/httpd
+python3 tools/process_version.py library/httpd
 ```

@@ -65,5 +65,5 @@ update.sh                    # 调用 versions.sh + apply-templates.sh
 ## 构建
 
 ```bash
-./tools/process_version.sh library/python
+python3 tools/process_version.py library/python
 ```

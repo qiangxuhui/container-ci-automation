@@ -54,8 +54,8 @@ alpine 项目直接从 Alpine 官方下载 minirootfs，不是从上游 Dockerfi
 
 ## 构建信息
 
-- **构建命令**: `./tools/process_version.sh library/alpine`
-- **Dry run**: `DRY_RUN=true ./tools/process_version.sh library/alpine`
+- **构建命令**: `python3 tools/process_version.py library/alpine`
+- **Dry run**: `DRY_RUN=true python3 tools/process_version.py library/alpine`
 - **Registry**: `lcr.loongnix.cn`
 - **Repository**: `library/alpine`
 - **平台**: `linux/loong64`

@@ -9,14 +9,14 @@
 | 文件 | 用途 |
 |------|------|
 | `config.yml` | 全局配置（registry 等） |
-| `tools/process_version.sh` | 统一入口，所有项目共用 |
-| `tools/log.sh` | 日志与辅助函数 |
+| `tools/process_version.py` | 统一入口，所有项目共用 |
 
 ## 调用方式
 
 ```bash
-./tools/process_version.sh library/debian
-DRY_RUN=true ./tools/process_version.sh library/ruby
+python3 tools/process_version.py library/debian
+python3 tools/process_version.py --dry-run library/ruby
+python3 tools/process_version.py --versions library/ruby
 ```
 
 ## 项目结构

@@ -35,5 +35,5 @@ template/
 ## 构建
 
 ```bash
-./tools/process_version.sh library/debian
+python3 tools/process_version.py library/debian
 ```

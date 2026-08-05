@@ -70,5 +70,5 @@ rust.json              # rustup 二进制信息（per-arch）
 ## 构建
 
 ```bash
-./tools/process_version.sh library/ruby
+python3 tools/process_version.py library/ruby
 ```

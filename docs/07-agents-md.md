@@ -60,8 +60,8 @@ library/ruby/
 
 ## 构建信息
 
-- **构建命令**: `./tools/process_version.sh library/ruby`
-- **Dry run**: `DRY_RUN=true ./tools/process_version.sh library/ruby`
+- **构建命令**: `python3 tools/process_version.py library/ruby`
+- **Dry run**: `DRY_RUN=true python3 tools/process_version.py library/ruby`
 - **Registry**: `lcr.loongnix.cn`
 - **Repository**: `library/ruby`
 - **平台**: `linux/loong64`
