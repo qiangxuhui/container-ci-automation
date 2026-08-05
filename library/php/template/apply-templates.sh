@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # library/php/template/apply-templates.sh
-# 接收版本号，读取 versions.json，使用 jq-template.awk 渲染模板生成 Dockerfile
-# 注意：versions.json 以 major.minor 为 key，模板中 env.version 使用 major.minor
+# 接收版本号，读取 versions.json，使用 sed 渲染模板生成 Dockerfile
+# 每个变体一个独立模板，无需 blocks/ 目录
 set -Eeuo pipefail
 
 VERSION="$1"
@@ -35,71 +35,63 @@ V_VERSION=$(echo "$V" | jq -r '.version')
 V_URL=$(echo "$V" | jq -r '.url')
 V_ASC_URL=$(echo "$V" | jq -r '.ascUrl')
 V_SHA256=$(echo "$V" | jq -r '.sha256')
-V_MAJOR=$(echo "$V" | jq -r '.major_version')
-V_MINOR=$(echo "$V" | jq -r '.minor_version')
 V_ALPINE=$(echo "$V" | jq -r '.alpine_version')
-V_DEBIAN=$(echo "$V" | jq -r '.debian_version')
 
 echo "Generating Dockerfiles for PHP $V_VERSION" >&2
 
-# === 下载 jq-template.awk ===
-JQT="$SCRIPT_DIR/jq-template.awk"
-if [[ ! -f "$JQT" ]]; then
-    echo "Downloading jq-template.awk..." >&2
-    wget -qO "$JQT" 'https://github.com/docker-library/bashbrew/raw/9f6a35772ac863a0241f147c820354e4008edf38/scripts/jq-template.awk'
-fi
+# === GPG Keys ===
+GPG_KEYS=$(jq -n --arg rc "$RC_VERSION" '
+    {
+        "8.6": ["D95C03BC702BE9515344AE3374E44BC9067701A5", "016895DE9A475111D537A6E69134FF30BC5A99B5", "5CFF17B64DC1C244F5D0EAC3E43535E2EB19010E"],
+        "8.5": ["1198C0117593497A5EC5C199286AF1F9897469DC", "49D9AF6BC72A80D6691719C8AA23F5BE9C7097D4", "D95C03BC702BE9515344AE3374E44BC9067701A5"],
+        "8.4": ["AFD8691FDAEDF03BDF6E460563F15A9B715376CA", "9D7F99A0CB8F05C8A6958D6256A97AF7600A39A6", "0616E93D95AF471243E26761770426E17EBBB3DD"],
+        "8.3": ["1198C0117593497A5EC5C199286AF1F9897469DC", "C28D937575603EB4ABB725861C0779DC5C0A9DE4", "AFD8691FDAEDF03BDF6E460563F15A9B715376CA"],
+        "8.2": ["39B641343D8C104B2B146DC3F9C39DC0B9698544", "E60913E4DF209907D8E30D96659A97C9CF2A795A", "1198C0117593497A5EC5C199286AF1F9897469DC"]
+    }[$rc] // error("missing GPG keys for " + $rc)
+    | join(" ")
+' | tr -d '"')
 
-# === 生成 Dockerfile 的函数 ===
+# === 通用 sed 替换参数 ===
+SED_ARGS=(
+    -e "s/{PHP_VERSION}/$V_VERSION/g"
+    -e "s|{PHP_URL}|$V_URL|g"
+    -e "s|{PHP_ASC_URL}|$V_ASC_URL|g"
+    -e "s/{PHP_SHA256}/$V_SHA256/g"
+    -e "s/{ALPINE_VERSION}/$V_ALPINE/g"
+)
+
+# 用临时文件处理 GPG_KEYS 替换（含特殊字符）
+gpg_tmpfile=$(mktemp)
+printf 'ENV GPG_KEYS %s\n' "$GPG_KEYS" > "$gpg_tmpfile"
+gpg_sed_file=$(mktemp)
+cat > "$gpg_sed_file" <<'SEDEOF'
+/{GPG_KEYS}/{
+    r TMPFILE
+    d
+}
+SEDEOF
+sed -i "s|TMPFILE|$gpg_tmpfile|" "$gpg_sed_file"
+
+# === 生成单个变体 ===
 generate_variant() {
     local variant_name="$1"
-    local from="$2"
-    local php_variant="$3"
-    local cmd="$4"
+    local template_file="$2"
 
     local output_dir="$DOCKERFILES_DIR/$V_VERSION/$variant_name"
     mkdir -p "$output_dir"
 
     echo "  processing $V_VERSION/$variant_name ..." >&2
 
-    # from 保持原始值（alpine:3.24 / debian:forky-slim）
-    # 模板中 is_alpine 通过 startswith("alpine") 判断，不能加 registry 前缀
-    export from="$from"
-    export version="$RC_VERSION"
-    export variant="$php_variant"
-    export cmd="$cmd"
-    export alpineVer=""
-    export suite=""
+    local output_file="$output_dir/Dockerfile"
 
-    local docker_image_from=""
-    if [[ "$from" == alpine:* ]]; then
-        alpineVer="${from#alpine:}"
-        suite="alpine${alpineVer}"
-        docker_image_from="lcr.loongnix.cn/library/alpine:${alpineVer}"
-    else
-        suite="${from#debian:}"
-        suite="${suite%-slim}"
-        docker_image_from="lcr.loongnix.cn/library/debian:${suite}-slim"
-    fi
-    export alpineVer suite
+    # 复制模板
+    cp "$SCRIPT_DIR/$template_file" "$output_file"
 
-    # 使用 jq-template.awk 渲染模板
-    # jq-template.awk 内部读取当前目录的 versions.json，必须 cd 到 template 目录
-    {
-        cat <<-'EOH'
-	#
-	# NOTE: THIS DOCKERFILE IS GENERATED VIA "apply-templates.sh"
-	#
-	# PLEASE DO NOT EDIT IT DIRECTLY.
-	#
+    # 执行通用 sed 替换
+    sed -i "${SED_ARGS[@]}" "$output_file"
 
-EOH
-        cd "$SCRIPT_DIR" && gawk -f "$JQT" Dockerfile-linux.template
-    } > "$output_dir/Dockerfile"
-
-    # 替换 FROM 行，添加 registry 前缀
-    if [[ -n "$docker_image_from" ]]; then
-        sed -i "s|^FROM ${from}$|FROM ${docker_image_from}|" "$output_dir/Dockerfile"
-    fi
+    # 替换 GPG_KEYS
+    sed -i -f "$gpg_sed_file" "$output_file"
 
     # 复制辅助脚本
     cp -a \
@@ -110,18 +102,13 @@ EOH
         "$SCRIPT_DIR/docker-php-source" \
         "$output_dir/"
 
-    if [[ "$php_variant" == "apache" ]]; then
+    # Apache 变体需要 apache2-foreground
+    if [[ "$variant_name" == *apache* ]]; then
         cp -a "$SCRIPT_DIR/apache2-foreground" "$output_dir/"
     fi
 
-    local cmd_first
-    cmd_first=$(jq -r '.[0]' <<< "$cmd")
-    if [[ "$cmd_first" != "php" ]]; then
-        sed -i -e "s! php ! $cmd_first !g" "$output_dir/docker-php-entrypoint"
-    fi
-
     # === LoongArch64 适配 ===
-    local dockerfile="$output_dir/Dockerfile"
+    local dockerfile="$output_file"
 
     # 1) PHP 8.2 loongarch64 fiber 支持
     if [[ "$RC_VERSION" == "8.2" ]]; then
@@ -147,14 +134,14 @@ EOH
 	fi; \
 LOONGPATCH
         local line_num
-        line_num=$(grep -nP '^	cd /usr/src/php; ' "$dockerfile" | head -1 | cut -d: -f1)
+        line_num=$(grep -nP '^\tcd /usr/src/php; ' "$dockerfile" | head -1 | cut -d: -f1)
         if [[ -n "$line_num" ]]; then
             sed -i "${line_num}r $tmpfile" "$dockerfile"
         fi
         rm -f "$tmpfile"
 
         # Alpine loongarch64 需要 libucontext（musl 没有 swapcontext）
-        if [[ "$from" == alpine:* ]]; then
+        if [[ "$template_file" == *alpine* ]]; then
             local uctx_tmpfile
             uctx_tmpfile=$(mktemp)
             cat > "$uctx_tmpfile" <<'UCTXBLOCK'
@@ -174,32 +161,22 @@ UCTXBLOCK
         fi
     fi
 
-    # 2) 禁用 pcre-jit（loongarch64 不支持）
-    local pcre_tmpfile
-    pcre_tmpfile=$(mktemp)
-    cat > "$pcre_tmpfile" <<'PCREBLOCK'
-	# bundled pcre does not support JIT on loongarch64
-	$(case "$gnuArch" in *loongarch64*) echo '--without-pcre-jit' ;; esac) \
-PCREBLOCK
-    local configure_line
-    configure_line=$(grep -nP '^\t\.\/configure ' "$dockerfile" | head -1 | cut -d: -f1)
-    if [[ -n "$configure_line" ]]; then
-        sed -i "${configure_line}r $pcre_tmpfile" "$dockerfile"
-    fi
-    rm -f "$pcre_tmpfile"
-
     echo "  dockerfiles/$V_VERSION/$variant_name/Dockerfile" >&2
 }
 
 # === 生成所有变体 ===
+# Debian 变体
+generate_variant "debian"         "Dockerfile-debian-cli.template"
+generate_variant "debian-apache"  "Dockerfile-debian-apache.template"
+generate_variant "debian-fpm"     "Dockerfile-debian-fpm.template"
+generate_variant "debian-zts"     "Dockerfile-debian-zts.template"
 
-generate_variant "debian" "debian:${V_DEBIAN}-slim" "cli" '["php", "-a"]'
-generate_variant "debian-apache" "debian:${V_DEBIAN}-slim" "apache" '["apache2-foreground"]'
-generate_variant "debian-fpm" "debian:${V_DEBIAN}-slim" "fpm" '["php-fpm"]'
-generate_variant "debian-zts" "debian:${V_DEBIAN}-slim" "zts" '["php", "-a"]'
+# Alpine 变体
+generate_variant "alpine"         "Dockerfile-alpine-cli.template"
+generate_variant "alpine-fpm"     "Dockerfile-alpine-fpm.template"
+generate_variant "alpine-zts"     "Dockerfile-alpine-zts.template"
 
-generate_variant "alpine" "alpine:${V_ALPINE}" "cli" '["php", "-a"]'
-generate_variant "alpine-fpm" "alpine:${V_ALPINE}" "fpm" '["php-fpm"]'
-generate_variant "alpine-zts" "alpine:${V_ALPINE}" "zts" '["php", "-a"]'
+# 清理临时文件
+rm -f "$gpg_tmpfile" "$gpg_sed_file"
 
 echo "Done." >&2
