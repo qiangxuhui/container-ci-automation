@@ -19,11 +19,3 @@ variants:
     tags:
       - "{version}-slim"
       - "{version}-debian-slim"
-#  - name: "alpine"
-#    template: "Dockerfile-alpine.template"
-#    tags:
-#      - "{version}-alpine"
-
-push:
-  registry: "lcr.loongnix.cn"
-  repository: "library/node"

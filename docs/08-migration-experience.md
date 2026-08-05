@@ -19,7 +19,7 @@
    - `{ALPINE_VERSION}` / `{DEBIAN_VERSION}` — 基础镜像版本
    - `{URL_xxx}` — 下载链接（多架构项目）
 4. 按基础系统分离模板：`Dockerfile-debian.template` / `Dockerfile-alpine.template`
-5. FROM 指令添加 `lcr.loongnix.cn/library/` 前缀
+5. FROM 指令保持与上游一致（不加 registry 前缀），构建时由宿主机配置解析基础镜像来源
 
 ### 第三步：编写 update.sh
 
@@ -60,7 +60,7 @@ update.sh → versions.json → apply-templates.sh → Dockerfile
 
 1. **变量提取**: 从上游最终 Dockerfile 提取关键变量，用 `{VAR}` 占位符
 2. **分离变体**: 按基础系统拆分 `Dockerfile-debian.template` / `Dockerfile-alpine.template`
-3. **基础镜像前缀**: FROM 必须加 `lcr.loongnix.cn/library/`
+3. **FROM 保持通用**: FROM 指令与上游一致，不加 registry 前缀。registry 在根目录 `config.yml` 全局定义，构建时由宿主机 Docker 配置解析
 4. **全量版本号**: 上游用 a.b 也坚持用 a.b.c
 
 ## 版本管理规范

@@ -23,7 +23,3 @@ variants:
     tags:
       - "{version}-alpine"
       - "{minor_version}-alpine"
-
-push:
-  registry: "lcr.loongnix.cn"
-  repository: "library/rust"

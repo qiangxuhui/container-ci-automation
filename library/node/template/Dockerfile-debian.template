@@ -4,7 +4,7 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM lcr.loongnix.cn/library/buildpack-deps:{DEBIAN_VERSION}-scm
+FROM buildpack-deps:{DEBIAN_VERSION}-scm
 
 RUN groupadd --gid 1000 node \
   && useradd --uid 1000 --gid node --shell /bin/bash --create-home node

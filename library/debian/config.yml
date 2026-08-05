@@ -17,7 +17,3 @@ variants:
     template: "Dockerfile-slim.template"
     tags:
       - "{version}-slim"
-
-push:
-  registry: "lcr.loongnix.cn"
-  repository: "library/debian"

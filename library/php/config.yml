@@ -44,7 +44,3 @@ variants:
     tags:
       - "{version}-alpine-zts"
       - "{minor_version}-alpine-zts"
-
-push:
-  registry: "lcr.loongnix.cn"
-  repository: "library/php"

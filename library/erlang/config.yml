@@ -25,7 +25,3 @@ variants:
     tags:
       - "{version}-alpine"
       - "{major_version}-alpine"
-
-push:
-  registry: "lcr.loongnix.cn"
-  repository: "library/erlang"

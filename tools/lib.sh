@@ -47,18 +47,32 @@ update_versions_file() {
 
 parse_config() {
     local config_file="$1"
+    local global_config="${BASH_SOURCE[0]%/*}/../config.yml"
 
-    python3 - "$config_file" << 'PYEOF'
+    python3 - "$config_file" "$global_config" << 'PYEOF'
 import yaml
 import sys
 
 config_file = sys.argv[1]
+global_config_file = sys.argv[2]
+
+# 加载全局配置
+with open(global_config_file) as f:
+    global_config = yaml.safe_load(f)
+registry = global_config.get("registry", "")
+
+# 加载项目配置
 with open(config_file) as f:
     config = yaml.safe_load(f)
-print(f'PROJECT_ORG="{config["project"]["org"]}"')
-print(f'PROJECT_NAME="{config["project"]["name"]}"')
-print(f'REGISTRY="{config["push"]["registry"]}"')
-print(f'REPOSITORY="{config["push"]["repository"]}"')
+
+org = config["project"]["org"]
+name = config["project"]["name"]
+
+print(f'PROJECT_ORG="{org}"')
+print(f'PROJECT_NAME="{name}"')
+print(f'REGISTRY="{registry}"')
+print(f'REPOSITORY="{org}/{name}"')
+
 vs = config.get('version_source', {})
 print(f'VERSION_SOURCE_TYPE="{vs.get("type", "github_releases")}"')
 print(f'VERSION_SOURCE_REPO="{vs.get("repository", "")}"')

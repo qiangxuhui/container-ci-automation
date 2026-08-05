@@ -4,7 +4,7 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM lcr.loongnix.cn/library/debian:{DEBIAN_VERSION}-slim
+FROM debian:{DEBIAN_VERSION}-slim
 
 ENV OTP_VERSION="{OTP_VERSION}" \
     REBAR3_VERSION="{REBAR3_VERSION}"

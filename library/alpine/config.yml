@@ -15,7 +15,3 @@ variants:
       - "{minor_version}"
       - "{version}"
       - "latest"
-
-push:
-  registry: "lcr.loongnix.cn"
-  repository: "library/alpine"

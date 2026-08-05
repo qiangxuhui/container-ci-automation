@@ -4,7 +4,7 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM lcr.loongnix.cn/library/buildpack-deps:{DEBIAN_VERSION}
+FROM buildpack-deps:{DEBIAN_VERSION}
 
 LABEL org.opencontainers.image.source=https://github.com/rust-lang/docker-rust
 

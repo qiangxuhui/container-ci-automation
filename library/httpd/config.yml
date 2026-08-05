@@ -18,7 +18,3 @@ variants:
     template: "Dockerfile-alpine.template"
     tags:
       - "{version}-alpine"
-
-push:
-  registry: "lcr.loongnix.cn"
-  repository: "library/httpd"
