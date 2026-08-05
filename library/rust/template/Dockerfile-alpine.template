@@ -1,0 +1,58 @@
+#
+# NOTE: THIS DOCKERFILE IS GENERATED VIA "apply-templates.sh"
+#
+# PLEASE DO NOT EDIT IT DIRECTLY.
+#
+
+FROM lcr.loongnix.cn/library/alpine:{ALPINE_VERSION}
+
+LABEL org.opencontainers.image.source=https://github.com/rust-lang/docker-rust
+
+RUN apk add --no-cache \
+        ca-certificates \
+        musl-dev \
+        gcc
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH \
+    RUST_VERSION={VERSION}
+
+RUN set -eux; \
+    \
+    arch="$(apk --print-arch)"; \
+    case "$arch" in \
+        'x86_64') \
+            rustArch='x86_64-unknown-linux-musl'; \
+            rustupSha256='{SHA256_X86_64_MUSL}'; \
+            ;; \
+        'aarch64') \
+            rustArch='aarch64-unknown-linux-musl'; \
+            rustupSha256='{SHA256_AARCH64_MUSL}'; \
+            ;; \
+        'ppc64le') \
+            rustArch='powerpc64le-unknown-linux-musl'; \
+            rustupSha256='{SHA256_PPC64LE_MUSL}'; \
+            ;; \
+        'loongarch64') \
+            rustArch='loongarch64-unknown-linux-musl'; \
+            rustupSha256='{SHA256_LOONGARCH64_MUSL}'; \
+            ;; \
+        *) \
+            echo >&2 "unsupported architecture: $arch"; \
+            exit 1; \
+            ;; \
+    esac; \
+    \
+    url="https://static.rust-lang.org/rustup/archive/{RUSTUP_VERSION}/${rustArch}/rustup-init"; \
+    wget "$url"; \
+    echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
+    \
+    chmod +x rustup-init; \
+    ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION --default-host ${rustArch}; \
+    rm rustup-init; \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME; \
+    \
+    rustup --version; \
+    cargo --version; \
+    rustc --version;

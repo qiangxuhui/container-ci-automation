@@ -1,0 +1,82 @@
+#
+# NOTE: THIS DOCKERFILE IS GENERATED VIA "apply-templates.sh"
+#
+# PLEASE DO NOT EDIT IT DIRECTLY.
+#
+
+FROM lcr.loongnix.cn/library/debian:{DEBIAN_VERSION}-slim
+
+LABEL org.opencontainers.image.source=https://github.com/rust-lang/docker-rust
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH \
+    RUST_VERSION={VERSION}
+
+RUN set -eux; \
+    \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        gcc \
+        libc6-dev \
+        wget \
+        ; \
+    \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        'amd64') \
+            rustArch='x86_64-unknown-linux-gnu'; \
+            rustupSha256='{SHA256_AMD64}'; \
+            ;; \
+        'armhf') \
+            rustArch='armv7-unknown-linux-gnueabihf'; \
+            rustupSha256='{SHA256_ARMHF}'; \
+            ;; \
+        'arm64') \
+            rustArch='aarch64-unknown-linux-gnu'; \
+            rustupSha256='{SHA256_ARM64}'; \
+            ;; \
+        'i386') \
+            rustArch='i686-unknown-linux-gnu'; \
+            rustupSha256='{SHA256_I386}'; \
+            ;; \
+        'ppc64el') \
+            rustArch='powerpc64le-unknown-linux-gnu'; \
+            rustupSha256='{SHA256_PPC64EL}'; \
+            ;; \
+        's390x') \
+            rustArch='s390x-unknown-linux-gnu'; \
+            rustupSha256='{SHA256_S390X}'; \
+            ;; \
+        'riscv64') \
+            rustArch='riscv64gc-unknown-linux-gnu'; \
+            rustupSha256='{SHA256_RISCV64}'; \
+            ;; \
+        'loong64') \
+            rustArch='loongarch64-unknown-linux-gnu'; \
+            rustupSha256='{SHA256_LOONG64}'; \
+            ;; \
+        *) \
+            echo >&2 "unsupported architecture: $arch"; \
+            exit 1; \
+            ;; \
+    esac; \
+    \
+    url="https://static.rust-lang.org/rustup/archive/{RUSTUP_VERSION}/${rustArch}/rustup-init"; \
+    wget --progress=dot:giga "$url"; \
+    echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
+    \
+    chmod +x rustup-init; \
+    ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION --default-host ${rustArch}; \
+    rm rustup-init; \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME; \
+    \
+    apt-get remove -y --auto-remove \
+        wget \
+        ; \
+    rm -rf /var/lib/apt/lists/*; \
+    \
+    rustup --version; \
+    cargo --version; \
+    rustc --version;
