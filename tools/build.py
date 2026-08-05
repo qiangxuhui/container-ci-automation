@@ -252,11 +252,6 @@ def main():
         log("ERROR", f"项目目录不存在: {project_dir}")
         sys.exit(2)
 
-    # 测试模式必须指定版本
-    if args.test and not args.version:
-        log("ERROR", "测试模式必须指定版本号")
-        sys.exit(2)
-
     # 加载配置
     cfg = load_config(project_dir)
 
