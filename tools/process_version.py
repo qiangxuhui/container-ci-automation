@@ -276,11 +276,11 @@ def main():
                 dry_run=args.dry_run,
             )
 
-        # 记录版本（测试模式跳过）
-        if not args.test:
-            update_versions_file(project_dir, version)
+        # 记录版本（测试模式或 dry-run 跳过）
+        if args.test or args.dry_run:
+            log("INFO", "跳过版本记录")
         else:
-            log("INFO", "测试模式: 跳过版本记录")
+            update_versions_file(project_dir, version)
 
 
 if __name__ == "__main__":
