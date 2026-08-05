@@ -80,10 +80,10 @@ SED_ARGS=(
 )
 
 # Debian 变体
-mkdir -p "$DOCKERFILES_DIR/$VERSION/$V_DEBIAN"
+mkdir -p "$DOCKERFILES_DIR/$VERSION/debian"
 sed "${SED_ARGS[@]}" \
-    "$SCRIPT_DIR/Dockerfile-debian.template" > "$DOCKERFILES_DIR/$VERSION/$V_DEBIAN/Dockerfile"
-echo "  dockerfiles/$VERSION/$V_DEBIAN/Dockerfile"
+    "$SCRIPT_DIR/Dockerfile-debian.template" > "$DOCKERFILES_DIR/$VERSION/debian/Dockerfile"
+echo "  dockerfiles/$VERSION/debian/Dockerfile"
 
 # Alpine 变体
 mkdir -p "$DOCKERFILES_DIR/$VERSION/alpine"
