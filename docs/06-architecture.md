@@ -4,7 +4,7 @@
 
 ```
 tools/                              ← 1 套统一工具
-├── lib.sh                          ← 共享函数（日志、配置解析、版本管理）
+├── log.sh                          ← 日志与辅助函数
 └── process_version.sh              ← 统一入口
 
 library/                            ← 项目目录

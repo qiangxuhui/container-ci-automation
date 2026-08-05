@@ -1,5 +1,5 @@
 #!/bin/bash
-# tools/lib.sh — 统一共享函数
+# tools/log.sh — 日志与辅助函数
 
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'

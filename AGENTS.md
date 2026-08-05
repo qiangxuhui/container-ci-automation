@@ -10,7 +10,7 @@
 |------|------|
 | `config.yml` | 全局配置（registry 等） |
 | `tools/process_version.sh` | 统一入口，所有项目共用 |
-| `tools/lib.sh` | 共享函数（日志、版本管理、配置解析） |
+| `tools/log.sh` | 日志与辅助函数 |
 
 ## 调用方式
 

@@ -3,7 +3,7 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib.sh"
+source "$SCRIPT_DIR/log.sh"
 
 # ===== 帮助信息 =====
 usage() {
