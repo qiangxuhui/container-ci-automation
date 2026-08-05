@@ -5,7 +5,7 @@
 ```
 tools/                              ← 1 套统一工具
 ├──                           ← 日志与辅助函数
-└── process_version.py              ← 统一入口
+└── build.py              ← 统一入口
 
 library/                            ← 项目目录
 ├── ruby/
@@ -38,9 +38,9 @@ library/                            ← 项目目录
 
 ## 关键约束
 
-1. **process_version.py 流程强制统一**
-2. **项目可处理多个版本** — get_versions.sh 输出多行时，process_version.py 逐个处理
-3. **tags 由 config.yml 声明** — process_version.py 渲染 `{version}` 变量
+1. **build.py 流程强制统一**
+2. **项目可处理多个版本** — get_versions.sh 输出多行时，build.py 逐个处理
+3. **tags 由 config.yml 声明** — build.py 渲染 `{version}` 变量
 4. **使用 buildx 构建** — `--platform linux/loong64`
 5. **并行由 GitHub 触发**
 6. **processed_versions.txt + dockerfiles/** — 存储在仓库内，更新后提交，处理并发冲突
@@ -71,7 +71,7 @@ version_source:
 variants:
   - name: "forky"                 # 变体名（对应目录名）
     template: "Dockerfile-forky.template"  # 模板文件名（必须在 template/ 目录下存在）
-    tags:                         # 标签列表（{version} 由 process_version.py 渲染）
+    tags:                         # 标签列表（{version} 由 build.py 渲染）
       - "{version}"
       - "latest"
   - name: "slim-forky"
@@ -102,7 +102,7 @@ push:
 
 ### 变量渲染
 
-process_version.py 在构建时渲染 `variants[].tags` 中的变量：
+build.py 在构建时渲染 `variants[].tags` 中的变量：
 
 | 变量 | 含义 | 示例值 |
 |------|------|--------|
@@ -250,21 +250,21 @@ RUN apk add --no-cache ruby
 ## 调用方式
 
 ```bash
-python3 tools/process_version.py library/ruby
-python3 tools/process_version.py library/debian
+python3 tools/build.py library/ruby
+python3 tools/build.py library/debian
 
 # 测试模式
-python3 tools/process_version.py --test library/ruby 4.0.6
-python3 tools/process_version.py -t library/debian 20260803T022142Z
+python3 tools/build.py --test library/ruby 4.0.6
+python3 tools/build.py -t library/debian 20260803T022142Z
 
 # Dry run
-DRY_RUN=true python3 tools/process_version.py library/ruby
+DRY_RUN=true python3 tools/build.py library/ruby
 ```
 
 ## 数据流
 
 ```
-process_version.py library/ruby
+build.py library/ruby
     │
     ├──→ get_versions.sh → "4.0.6"
     │
@@ -324,14 +324,14 @@ jobs:
           password: ${{ secrets.REGISTRY_PASS }}
 
       - name: Build and Push
-        run: python3 tools/process_version.py library/ruby
+        run: python3 tools/build.py library/ruby
 ```
 
 ## 并发处理策略
 
 ### 问题
 
-多个 workflow 并行触发时，多个 process_version.py 实例可能同时修改 processed_versions.txt，导致 git 冲突。
+多个 workflow 并行触发时，多个 build.py 实例可能同时修改 processed_versions.txt，导致 git 冲突。
 
 ### 解决方案：乐观锁 + 自动重试
 

@@ -52,8 +52,8 @@ docker-erlang-otp/
 
 ```bash
 # 测试单个版本
-python3 tools/process_version.py --test library/erlang 28.5.0.4
+python3 tools/build.py --test library/erlang 28.5.0.4
 
 # 生产构建
-python3 tools/process_version.py library/erlang
+python3 tools/build.py library/erlang
 ```

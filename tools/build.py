@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tools/process_version.py — 统一入口，所有项目共用"""
+"""tools/build.py — 统一入口，所有项目共用"""
 
 import argparse
 import os
