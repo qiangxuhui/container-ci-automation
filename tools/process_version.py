@@ -218,6 +218,7 @@ def main():
     parser.add_argument("version", nargs="?", default=None, help="版本号（测试模式必填）")
     parser.add_argument("--test", "-t", action="store_true", help="测试模式: 强制构建，不推送，不记录")
     parser.add_argument("--dry-run", "-n", action="store_true", help="仅打印命令，不执行")
+    parser.add_argument("--versions", "-V", action="store_true", help="仅获取并输出最新版本号")
     args = parser.parse_args()
 
     # 解析项目目录
@@ -233,6 +234,13 @@ def main():
 
     # 加载配置
     cfg = load_config(project_dir)
+
+    # --versions: 仅输出版本号
+    if args.versions:
+        versions = get_versions(project_dir, cfg)
+        for v in versions:
+            print(v)
+        return
 
     # 获取版本
     if args.version:
