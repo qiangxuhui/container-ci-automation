@@ -16,3 +16,6 @@ migration-status.md
 # 大文件
 *.iso
 *.img
+
+# Python
+__pycache__
