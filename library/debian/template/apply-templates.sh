@@ -31,7 +31,7 @@ eval "$(echo "$V" | jq -r '
     "DEBIAN_VERSION=\(.debian_version)",
     "DEBIAN_VERSION_NAME=\(.debian_version_name)",
     "SUITE=\(.suite)",
-    "ARCH=\(.arch)
+    "ARCH=\(.arch)"
 ')"
 
 # 从版本号提取日期部分
