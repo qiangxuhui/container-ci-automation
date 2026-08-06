@@ -1,0 +1,19 @@
+name: "library/alpine"
+
+on:
+  schedule:
+    # 每天北京时间 00:00（UTC 16:00）检查新版本
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '指定版本号（留空=自动检测）'
+        required: false
+        type: string
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      project: library/alpine
+      version: ${{ inputs.version || '' }}

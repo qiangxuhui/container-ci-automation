@@ -187,6 +187,7 @@ def build_variant(
     project_dir: Path,
     test_mode: bool,
     dry_run: bool,
+    push: bool,
 ):
     build_dir = project_dir / "dockerfiles" / version / variant_name
     if not (build_dir / "Dockerfile").exists():
@@ -208,7 +209,7 @@ def build_variant(
     log("INFO", f"  构建: {build_tags[0]}")
     if dry_run:
         log("INFO", f"  [dry-run] docker buildx build --platform {platform} --load {' '.join(build_tag_args)} {build_dir}")
-        if not test_mode:
+        if push and not test_mode:
             for bt, pt in zip(build_tags, push_tags):
                 log("INFO", f"  [dry-run] docker tag {bt} {pt}")
                 log("INFO", f"  [dry-run] docker push {pt}")
@@ -219,7 +220,7 @@ def build_variant(
         check=True,
     )
 
-    if not test_mode:
+    if push and not test_mode:
         log("INFO", f"  推送: {push_tags[0]}")
         for bt, pt in zip(build_tags, push_tags):
             subprocess.run(["docker", "tag", bt, pt], check=True)
@@ -244,6 +245,7 @@ def main():
     parser.add_argument("--test", "-t", action="store_true", help="测试模式: 强制构建，不推送，不记录")
     parser.add_argument("--dry-run", "-n", action="store_true", help="仅打印命令，不执行")
     parser.add_argument("--versions", "-V", action="store_true", help="仅获取并输出最新版本号")
+    parser.add_argument("--push", action="store_true", help="构建后推送到 registry（生产环境使用）")
     args = parser.parse_args()
 
     # 解析项目目录
@@ -302,6 +304,7 @@ def main():
                 project_dir=project_dir,
                 test_mode=args.test,
                 dry_run=args.dry_run,
+                push=args.push,
             )
 
         # 记录版本（测试模式或 dry-run 跳过）
