@@ -16,15 +16,15 @@ library/                            ← 项目目录
 │   ├── template/
 │   │   ├── update.sh               ← 项目专属：处理变量
 │   │   ├── apply-templates.sh      ← 项目专属：应用模板生成 Dockerfile
-│   │   ├── Dockerfile-forky.template
-│   │   ├── Dockerfile-slim-forky.template
+│   │   ├── Dockerfile-debian.template
+│   │   ├── Dockerfile-debian-slim.template
 │   │   └── Dockerfile-alpine.template
 │   └── dockerfiles/                ← 生成的构建目录（CI 提交）
 │       ├── .gitignore              ← 原生 gitignore，排除不需要提交的文件
 │       └── 4.0.6/
-│           ├── forky/
+│           ├── debian/
 │           │   └── Dockerfile
-│           ├── slim-forky/
+│           ├── debian-slim/
 │           │   └── Dockerfile
 │           └── alpine/
 │               └── Dockerfile
@@ -69,24 +69,19 @@ version_source:
 
 # 变体定义（必填，至少一个）
 variants:
-  - name: "forky"                 # 变体名（对应目录名）
-    template: "Dockerfile-forky.template"  # 模板文件名（必须在 template/ 目录下存在）
+  - name: "debian"                 # 变体名（对应目录名）
+    template: "Dockerfile-debian.template"  # 模板文件名（必须在 template/ 目录下存在）
     tags:                         # 标签列表（{version} 由 build.py 渲染）
       - "{version}"
       - "latest"
-  - name: "slim-forky"
-    template: "Dockerfile-slim-forky.template"
+  - name: "debian-slim"
+    template: "Dockerfile-debian-slim.template"
     tags:
       - "{version}-slim"
   - name: "alpine"
     template: "Dockerfile-alpine.template"
     tags:
       - "{version}-alpine"
-
-# 推送配置（必填）
-push:
-  registry: "lcr.loongnix.cn"    # 镜像仓库地址
-  repository: "library/ruby"      # 镜像仓库路径
 ```
 
 ### 约束规则
@@ -97,8 +92,6 @@ push:
 | `variants[].name` | 必须唯一，对应 `dockerfiles/{version}/{name}/` 目录名 |
 | `variants[].template` | 必须是 `Dockerfile-{variant}.template` 格式，且文件必须存在 |
 | `variants[].tags` | 至少一个标签，`{version}` 为唯一允许的变量占位符 |
-| `push.registry` | 镜像推送目标，buildx 构建时使用 |
-| `push.repository` | 镜像仓库路径，与 registry 拼接为完整地址 |
 
 ### 变量渲染
 
@@ -132,14 +125,14 @@ lcr.loongnix.cn/library/alpine:latest
 ├── update.sh                     ← 必填：处理变量
 ├── apply-templates.sh            ← 必填：应用模板生成 Dockerfile
 ├── Dockerfile-{variant}.template ← 必填：每个变体一个模板
-└── {辅助文件}                     ← 可选：debian.version, modify-rootfs-url.sh 等
+└── {辅助文件}                     ← 可选：modify-rootfs-url.sh 等
 ```
 
 ### 模板文件规范
 
 **命名**：`Dockerfile-{variant}.template`
 - variant 名必须与 config.yml 中 `variants[].name` 一致
-- 示例：`Dockerfile-forky.template`, `Dockerfile-slim-forky.template`, `Dockerfile-alpine.template`
+- 示例：`Dockerfile-debian.template`, `Dockerfile-debian-slim.template`, `Dockerfile-alpine.template`
 
 **变量占位符**（由 apply-templates.sh 使用 sed 渲染）：
 
@@ -147,17 +140,17 @@ lcr.loongnix.cn/library/alpine:latest
 |------|------|--------|
 | `{VERSION}` | 完整版本号 | `4.0.6` |
 | `{MAJOR_VERSION}` | 主版本号 | `4.0` |
-| `{VARIANT}` | 变体名 | `forky` |
+| `{VARIANT}` | 变体名 | `debian` |
 | `{REGISTRY}` | 镜像仓库地址 | `lcr.loongnix.cn` |
 | `{REPOSITORY}` | 镜像仓库路径 | `library/ruby` |
 | `{CUSTOM_*}` | 项目自定义变量 | 由 update.sh 生成 |
 
-**示例：Dockerfile-forky.template**
+**示例：Dockerfile-debian.template**
 
 ```dockerfile
 ARG VERSION
 
-FROM {REGISTRY}/library/buildpack-deps:forky
+FROM buildpack-deps:forky
 
 ARG VERSION
 LABEL org.opencontainers.image.version="{VERSION}"
@@ -227,7 +220,7 @@ RUN apt-get update && apt-get install -y ruby
 ### 拆分后
 
 ```dockerfile
-# template/Dockerfile-forky.template
+# template/Dockerfile-debian.template
 FROM buildpack-deps:forky
 RUN apt-get update && apt-get install -y ruby
 ```
@@ -279,8 +272,8 @@ build.py library/ruby
     ├──→ apply-templates.sh 4.0.6
     │       │
     │       └──→ 遍历 variants，生成 Dockerfile
-    │               dockerfiles/4.0.6/forky/Dockerfile
-    │               dockerfiles/4.0.6/slim-forky/Dockerfile
+    │               dockerfiles/4.0.6/debian/Dockerfile
+    │               dockerfiles/4.0.6/debian-slim/Dockerfile
     │               dockerfiles/4.0.6/alpine/Dockerfile
     │
     ├──→ buildx 构建
