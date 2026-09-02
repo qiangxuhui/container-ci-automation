@@ -19,3 +19,12 @@ migration-status.md
 
 # Python
 __pycache__
+
+# 编辑器残留
+*.swp
+
+# AI 运维工具工作目录（失败日志落盘）
+.ai-ops/
+
+# AI 运维会话记录（autofix 错误原因+修复过程；知识沉淀以项目 AGENTS.md 维护记录为准）
+log/ai-ops/

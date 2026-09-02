@@ -4,12 +4,34 @@
 
 将 container-ci 中 76+ 个项目的流水线管理从「每个项目手写脚本」转变为「声明式配置 + 统一工具」。
 
+## 当前目标：AI 运维工具（2026-09 起）
+
+项目最终形态是「**全部已迁移项目每天定时构建并推送 lcr.loongnix.cn**」。构建进入每日定时后，失败 CI 的排查修复会从偶发变成日常负担：上游版本变更、模板变量缺失、下载链接失效、基础镜像变动、Dockerfile 语法等问题，都需要有人去 GitHub 页面查看、定位、修复。
+
+本阶段为其构建一套 **AI 运维工具，目标是每天获取构建失败的 CI 流水线并进行修复**，采用增量策略：**先走通 library/alpine 单项目的 ai-ops 闭环，再推广到其他项目，最后接入每日定时自动巡检（当前不做定时任务）**：
+
+1. 获取构建失败的 CI 流水线（当前：指定项目手动采集；终态：每日自动全仓）
+2. 结合 `library/<project>/AGENTS.md` 上下文定位失败根因
+3. 在约束内自动修复（template/、config.yml 等），`build.py --test` 本地验证（**autofix 自动模式只到验证为止，不提交不推送**，改动留工作区由人工审阅）
+4. 修复提交并重跑失败的 workflow 至转绿（autofix 模式下由人工在审阅改动后提交并触发重跑）；无法定位/连续失败时产出交接报告交人工
+5. 修复经验回写项目 AGENTS.md（维护记录 / 已知问题），越修越快
+
+**试点项目**：`library/alpine` —— 唯一已接入每日定时 CI 的项目（schedule `0 16 * * *`），每日有真实构建与失败样本；单变体、无编译，闭环链路最简。推广期第一个项目选编译型（httpd/golang）补齐编译失败模式。
+
+**开发计划**：`docs/ai-ops/README.md`（决策记录、三阶段计划、待确认项清单）。
+**修复执行手册**：`docs/ai-ops/runbook.md`（Hermes 会话 / autofix 按此执行闭环）。
+
+**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环。
+
 ## 核心工具
 
 | 文件 | 用途 |
 |------|------|
 | `config.yml` | 全局配置（registry 等） |
-| `tools/build.py` | 统一入口，所有项目共用 |
+| `tools/build.py` | 统一入口，所有项目共用（--test / --dry-run / --versions / --push） |
+| `tools/ai-ops.py` | AI 运维工具：确定性动作（fetch/rerun/dispatch/commit）+ autofix 一键闭环（分析+修复+验证，不提交；会话报告落盘 log/ai-ops/） |
+| `.github/workflows/build.yml` | 可复用 CI workflow（构建 + 推送 + 提交版本跟踪） |
+| `.github/workflows/library-*.yml` | 每个项目一个定时 workflow（试点期仅 alpine 启用 schedule） |
 
 ## 调用方式
 
@@ -23,8 +45,9 @@ python3 tools/build.py --versions library/ruby
 
 ```
 config.yml                      ← 全局配置（registry）
+.github/workflows/              ← 每日定时构建 CI
 library/{project}/
-├── AGENTS.md                   ← AI agent 上下文
+├── AGENTS.md                   ← AI agent 上下文（修复前必读）
 ├── config.yml                  ← 项目声明式配置（org, name, variants）
 ├── processed_versions.txt      ← 版本跟踪
 ├── get_versions.sh             ← 自定义版本脚本（可选）
@@ -41,15 +64,30 @@ library/{project}/
 - **模板 FROM**：保持与上游一致，不加 registry 前缀。构建时由宿主机 Docker 配置解析基础镜像来源
 - **推送目标**：由全局 registry + 项目 org/name 自动拼接（如 `lcr.loongnix.cn/library/ruby`）
 
-## 迁移经验文档
+## 文档索引
 
 | 文档 | 内容 |
 |------|------|
-| `docs/08-migration-experience.md` | 迁移规范，包含模板变量提取和验证流程 |
-| `migration-status.md` | 迁移进度跟踪 |
+| `docs/06-architecture.md` | 整体架构与 config.yml 强约束 |
+| `docs/07-agents-md.md` | 项目 AGENTS.md 编写规范（含维护记录表） |
+| `docs/08-migration-experience.md` | 迁移规范（模板变量提取与验证流程） |
+| `docs/ai-ops/README.md` | **AI 运维工具开发计划（当前目标）**：决策、三阶段计划、待确认项 |
+| `docs/ai-ops/runbook.md` | **AI 修复执行手册**：闭环流程、失败分类表、演练/止损、命令速查 |
+| `migration-status.md` | 迁移进度跟踪（本地个人使用，被 .gitignore 忽略，仓库内不存在） |
 
-## 待迁移项目
+## AI 修复须知
 
-未迁移项目清单见 `migration-status.md`。
+执行 ai-ops 修复（autofix 会话 / 手动会话）必须遵守：
 
-参考 `docs/08-migration-experience.md` 中的经验进行迁移。
+1. 修项目前必读 `library/<project>/AGENTS.md`（已知问题 / 本地调整 / 维护记录）与 docs/08 迁移规范
+2. 幂等：已回写维护记录表的失败 run 不重复修复，直接报告退出
+3. 只改与根因相关的文件（项目 template/、config.yml、get_versions.sh；tools/build.py 仅当其自身有 bug）；**严禁改全局 config.yml 的 registry；严禁 git add -A 卷入无关改动**，只 add 本次相关文件
+4. 改 .sh 先 `bash -n`；构建验证用 `python3 tools/build.py --test library/<project> <version>`（不推送）；完整 loong64 构建耗时长时可只验证版本获取/模板渲染链路并如实说明
+5. Debian 基础镜像统一 forky；FROM 不加 registry 前缀；变体/标签命名规范见 docs/08
+6. 修复成功（重跑转绿）后回写项目 AGENTS.md「维护记录」表（日期/问题/修复/commit），表不存在按 docs/07 规范建立；autofix 未提交时 commit 列暂填「待提交」
+7. autofix 会话不执行 git add / git commit / git push（只分析+修复+验证）；`commit` 子命令（git add -A）仅用于人工审阅改动后的手动提交
+8. autofix 每次会话自动落盘 `log/ai-ops/{date}-{project}.md`（错误原因+修复过程，不入库）；结构化知识沉淀仍走项目 AGENTS.md「维护记录」表
+
+## 迁移经验文档与待迁移项目
+
+未迁移项目清单见 `migration-status.md`；迁移经验见 `docs/08-migration-experience.md`（含模板变量提取和验证流程），迁移时参考其中的经验。
