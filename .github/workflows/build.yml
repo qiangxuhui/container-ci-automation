@@ -20,13 +20,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
       - name: Install dependencies
-        run: pip install pyyaml
+        run: |
+          # loongarch64 CI 机器可能是 dnf 或 apt 包管理
+          SUDO=""; [ "$(id -u)" != "0" ] && SUDO="sudo"
+          if command -v dnf >/dev/null 2>&1; then
+            $SUDO dnf install -y python3 python3-pip wget
+          else
+            $SUDO apt-get update
+            $SUDO apt-get install -y python3 python3-pip wget
+          fi
+          python3 -m pip install --break-system-packages pyyaml
 
       - name: Build and push
         run: |
@@ -34,7 +38,7 @@ jobs:
           if [ -n "${{ inputs.version }}" ]; then
             ARGS="$ARGS ${{ inputs.version }}"
           fi
-          python3 tools/build.py $ARGS --push
+          python3 tools/build.py $ARGS
 
       - name: Commit version tracking
         run: |
