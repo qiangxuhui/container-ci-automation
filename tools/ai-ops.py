@@ -12,7 +12,8 @@
                                     修复 → 验证（不提交、不推送；改动留工作区，
                                     由人工审阅后提交并重跑），会话后核对工作区状态；
                                     会话报告（错误原因+修复过程）自动落盘
-                                    log/ai-ops/{date}-{project}.md
+                                    log/ai-ops/{date}-{project}.md，结构化记录回写
+                                    docs/ai-ops/ci-fix.md
 
 原则：fetch/rerun/dispatch/commit 只做确定性动作（无需判断）；
 autofix 把「分析 + 修复决策」委托给 Hermes agent 的一次性会话执行，
@@ -32,6 +33,8 @@ FAIL_CONCLUSIONS = {"failure", "cancelled", "timed_out", "startup_failure"}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = REPO_ROOT / "log" / "ai-ops"
+CI_FIX_FILE = REPO_ROOT / "docs" / "ai-ops" / "ci-fix.md"
+CI_FIX_FALLBACK = "（无 CI-FIX 标记，详见 log/ai-ops/ 会话报告）"
 
 
 def log(msg):
@@ -126,20 +129,21 @@ def build_autofix_prompt(project, run_id, log_path):
 
 执行步骤（必须遵守 docs/ai-ops/runbook.md 与 AGENTS.md「AI 修复须知」）：
 1. 读失败日志（tail 关键段），对照 runbook 失败分类表确定根因；
-2. 读 {project}/AGENTS.md 的已知问题与维护记录：若该 run 已处理过，直接报告并退出（幂等，不重复修复）；
+2. 读仓库根 docs/ai-ops/ci-fix.md 与 {project}/AGENTS.md 的已知问题：若该 run id 已出现在 ci-fix.md 中，直接报告并退出（幂等，不重复修复）；
 3. 修复：只改与根因相关的文件（{project}/template/、config.yml、get_versions.sh 等；tools/build.py 仅当其自身有 bug）。严禁改全局 config.yml 的 registry；修复改动一律留在工作区，不 git add；
 4. 验证（前置，通不过不结束）：
    - 改过 .sh 先 bash -n；
    - 能跑则 python3 tools/build.py --test {project} <version>（不推送）；完整 loong64 镜像构建耗时长，若预计超时可改为只验证版本获取/模板渲染链路，并在结果中如实说明未跑完整构建的原因；
-5. 回写 {project}/AGENTS.md 维护记录表，追加一行（日期 / 问题 / 修复 / commit）；表不存在则按 docs/07 规范建立。因改动未提交，commit 列暂填「待提交」；
-6. 结束：不执行 git add / git commit / git push（本次会话任何情况下都不提交、不推送，提交由人工审阅改动后执行）。
+5. 结束：不执行 git add / git commit / git push，也**不要写任何项目的 AGENTS.md**（结构化记录由脚本回写，无需会话写文件）。本次会话任何情况下都不提交、不推送，提交由人工审阅改动后执行。
 
-最终回复将被脚本归档到 log/ai-ops/{{date}}-{{project}}.md（本地不入库），请保持结构清晰、内容自包含。最终回复（中文，简明）必须包含：
+最终回复将被脚本归档到 log/ai-ops/{{date}}-{{project}}.md（本地不入库），并提炼为一行结构化记录写入仓库 docs/ai-ops/ci-fix.md。请保持结构清晰、内容自包含。最终回复（中文，简明）必须包含：
 - 根因分类 + 一句话根因
 - 修改的文件与要点（若无需修改，说明原因：幂等命中 / 外部凭据缺失 / 已修复等）
 - 验证执行情况（bash -n / --test 结果，或未跑的原因）
 - 工作区改动清单（git status --short + 关键 diff 摘要）
-- 维护记录是否已回写
+- 最后输出两行固定标记（供脚本回写 ci-fix.md，从上述结论提炼、各一句话）：
+  CI-FIX-ROOTCAUSE: <一句话根因>
+  CI-FIX-FIX: <一句话修复>
 
 若无法修复或验证不过，不要结束任务，给出原因与建议（是否需人工或外部配置，如 registry 凭据 secrets）。"""
 
@@ -185,6 +189,47 @@ def write_autofix_log(project_dir, entry, report, rc=0, session_id=None):
                     ".gitignore），本地可追溯；知识沉淀以项目 AGENTS.md「维护记录」表为准。\n\n---\n\n")
         f.write(body)
     return log_file
+
+
+def write_ci_fix(project_dir, entry, report):
+    """把一次 autofix 修复提炼为一行结构化记录，追加到 docs/ai-ops/ci-fix.md（入库）。
+
+    从会话报告提取 CI-FIX-ROOTCAUSE / CI-FIX-FIX 两行标记（一句话根因 / 一句话修复）；
+    提取失败则回退占位并指向 log/ai-ops/ 会话报告。幂等：文件已含该 run id 时跳过。
+    结构化知识沉淀统一走本文件（2026-09 确认），不再写项目 AGENTS.md。
+    """
+    org, name = project_info(project_dir)
+    today = datetime.now().strftime("%Y-%m-%d")
+    run_id = entry["run_id"]
+
+    if CI_FIX_FILE.exists():
+        if f"| {run_id} |" in CI_FIX_FILE.read_text(encoding="utf-8"):
+            log(f"ci-fix 已存在 run #{run_id} 的记录，跳过回写（幂等）")
+            return None
+
+    rootcause = fix = CI_FIX_FALLBACK
+    for ln in (report or "").splitlines():
+        if ln.startswith("CI-FIX-ROOTCAUSE:"):
+            rootcause = ln.split(":", 1)[1].strip()
+        elif ln.startswith("CI-FIX-FIX:"):
+            fix = ln.split(":", 1)[1].strip()
+
+    def esc(s):
+        return s.replace("|", "\\|").strip()
+
+    row = f"| {today} | {org}/{name} | {run_id} | {esc(rootcause)} | {esc(fix)} | 待提交 |"
+    first = not CI_FIX_FILE.exists()
+    if first:
+        CI_FIX_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CI_FIX_FILE, "a", encoding="utf-8") as f:
+        if first:
+            f.write("# CI 修复记录（ai-ops 结构化知识沉淀）\n\n")
+            f.write("> autofix 脚本自动回写（tools/ai-ops.py），每行 = 一次修复闭环，同一 run 只记一次。\n")
+            f.write("> 完整会话报告（错误原因+修复过程）见仓库根 `log/ai-ops/{date}-{project}.md`（不入库）。\n\n")
+            f.write("| 日期 | 项目 | run | 问题 | 修复 | 状态 |\n")
+            f.write("|------|------|-----|------|------|------|\n")
+        f.write(row + "\n")
+    return CI_FIX_FILE
 
 
 def extract_session_id(stderr):
@@ -276,6 +321,7 @@ def cmd_autofix(args):
         log_file = write_autofix_log(args.project_dir, entry, "", rc=124,
                                      session_id="超时，无会话 id")
         log(f"超时已记录到 {log_file}")
+        write_ci_fix(args.project_dir, entry, "CI-FIX-ROOTCAUSE: 会话超时\nCI-FIX-FIX: 见 log/ai-ops/ 记录，需人工介入")
         sys.exit(1)
     print(r.stdout)
     if r.returncode != 0:
@@ -287,6 +333,11 @@ def cmd_autofix(args):
     sid = extract_session_id(r.stderr)
     log_file = write_autofix_log(args.project_dir, entry, r.stdout, rc=r.returncode, session_id=sid)
     log(f"autofix 会话已记录到 {log_file}")
+
+    # 结构化知识沉淀 → docs/ai-ops/ci-fix.md（不写项目 AGENTS.md）
+    ci_file = write_ci_fix(args.project_dir, entry, r.stdout)
+    if ci_file:
+        log(f"结构化记录已回写 {ci_file}")
 
     head_after = run(["git", "rev-parse", "--short", "HEAD"])
     if head_after != head_before:

@@ -31,7 +31,7 @@
 2. 结合项目上下文（library/\<project\>/AGENTS.md）定位失败原因
 3. 在约束范围内自动修复（模板、脚本、配置），本地验证后提交
 4. 重跑失败的 workflow 直到绿色，或明确交接人工
-5. 把每次修复沉淀回项目 AGENTS.md（维护记录 / 已知问题），越修越快
+5. 把每次修复沉淀为结构化记录（docs/ai-ops/ci-fix.md）+ 详细会话报告（log/ai-ops/），越修越快
 
 **实施路径（增量）**：先走通一个项目（library/alpine）的 ai-ops 闭环，验证工具与手册的可用性；再推广到其他已迁移项目；最后接入每日定时巡检（Hermes cron）。三个阶段的边界见 §4。
 
@@ -65,7 +65,7 @@
 | 项目 workflow | `.github/workflows/library-*.yml`（试点期仅 alpine 接通 schedule；终态每项目 1 个+每日定时） | 触发构建 |
 | 构建 workflow | `.github/workflows/build.yml`（workflow_call 可复用） | checkout → build.py --push → 提交版本跟踪 |
 | 统一入口 | `tools/build.py` | 获取版本 → update.sh → apply-templates.sh → buildx 构建；`--test` 本地验证不推送 |
-| AI 运维工具 | `tools/ai-ops.py` | 确定性动作：fetch（采集失败 run+日志）/ rerun / dispatch / commit；autofix 组装上下文并调用 hermes 一次性会话完成分析→修复→验证，会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md` |
+| AI 运维工具 | `tools/ai-ops.py` | 确定性动作：fetch（采集失败 run+日志）/ rerun / dispatch / commit；autofix 组装上下文并调用 hermes 一次性会话完成分析→修复→验证，会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md`，结构化记录（一行表格）由脚本回写 `docs/ai-ops/ci-fix.md` |
 | 项目上下文 | `library/<project>/AGENTS.md` | 上游映射、本地调整、已知问题、维护记录 —— AI 修复的决策依据（规范见 docs/07-agents-md.md） |
 | 修复执行手册 | `docs/ai-ops/runbook.md` | Hermes agent / autofix 会话按此执行「采集→分析→修复→验证→直推→重跑→回写」闭环 |
 | 迁移规范 | `docs/08-migration-experience.md` | 修复模板/脚本时必须遵循的规则（FROM 不加 registry、变体命名、forky 约束等） |
@@ -82,7 +82,7 @@
 | R2 | 失败日志与上下文聚合 | 每个失败 run 产出结构化摘要：日志尾部关键错误 + 对应项目 AGENTS.md 已知问题命中情况 + 失败分类 |
 | R3 | 自动修复 | 在 §6 约束内修改（模板/脚本/配置），先用 `bash -n`、再用 `build.py --test` 在 loong64 环境真实验证 |
 | R4 | 提交与重跑 | 修复经过验证后提交，重新触发失败 workflow，确认转绿并记录 |
-| R5 | 知识沉淀 | 每次成功修复回写项目 AGENTS.md「维护记录」，新失败模式补充「已知问题」；后续 session 可直接命中 |
+| R5 | 知识沉淀 | 每次成功修复由脚本回写 `docs/ai-ops/ci-fix.md`（一行表格：日期/项目/run/问题/修复/状态），完整报告落盘 `log/ai-ops/`；后续 session 读 ci-fix.md 幂等命中、读 log 复用历史上下文 |
 | R6 | 人工兜底 | 无法定位/连续失败/验证不过的，明确产出「交接报告」而非无限循环 |
 
 ## 4. 分阶段开发计划
@@ -172,6 +172,7 @@ Phase 3 前再定（当前不阻塞）：执行时点、通知渠道、修复确
 - ✅ autofix 提交边界：只分析+修复+验证，不提交不推送（`--push` 参数已移除）；`commit` 子命令（git add -A）保留，仅供人工审阅改动后的手动提交，与 §6「autofix 会话严禁 add -A」口径一致
 - ✅ `.gitignore` 已加入 `.ai-ops/` 与 `*.swp`
 - ✅ autofix 会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md`（不入库），脚本端在会话结束后写入，当日多次追加条目
+- ✅ 结构化知识沉淀改为脚本回写 `docs/ai-ops/ci-fix.md`（入库、跨项目累计、同 run 幂等）；autofix 会话**不再写任何项目的 AGENTS.md**（2026-09 确认——一次性会话写受保护文件会审批超时被拒，确定性回写归脚本）
 - 待观察：autofix 改动留工作区后，下一次 fetch/autofix 前需人工审阅并提交，否则新旧改动会混淆——可考虑后续在 cmd_autofix 入口加「工作区不干净则中止」检查（待讨论）
 
 ## 8. 证据附录（现状事实，2026-09 采集）

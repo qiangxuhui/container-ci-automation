@@ -14,7 +14,7 @@
 2. 结合 `library/<project>/AGENTS.md` 上下文定位失败根因
 3. 在约束内自动修复（template/、config.yml 等），`build.py --test` 本地验证（**autofix 自动模式只到验证为止，不提交不推送**，改动留工作区由人工审阅）
 4. 修复提交并重跑失败的 workflow 至转绿（autofix 模式下由人工在审阅改动后提交并触发重跑）；无法定位/连续失败时产出交接报告交人工
-5. 修复经验回写项目 AGENTS.md（维护记录 / 已知问题），越修越快
+5. 修复经验沉淀：结构化记录回写 `docs/ai-ops/ci-fix.md`（脚本自动）+ 完整会话报告落盘 `log/ai-ops/`，越修越快
 
 **试点项目**：`library/alpine` —— 唯一已接入每日定时 CI 的项目（schedule `0 16 * * *`），每日有真实构建与失败样本；单变体、无编译，闭环链路最简。推广期第一个项目选编译型（httpd/golang）补齐编译失败模式。
 
@@ -73,6 +73,7 @@ library/{project}/
 | `docs/08-migration-experience.md` | 迁移规范（模板变量提取与验证流程） |
 | `docs/ai-ops/README.md` | **AI 运维工具开发计划（当前目标）**：决策、三阶段计划、待确认项 |
 | `docs/ai-ops/runbook.md` | **AI 修复执行手册**：闭环流程、失败分类表、演练/止损、命令速查 |
+| `docs/ai-ops/ci-fix.md` | **CI 修复记录**：结构化知识沉淀（autofix 脚本自动回写） |
 | `migration-status.md` | 迁移进度跟踪（本地个人使用，被 .gitignore 忽略，仓库内不存在） |
 
 ## AI 修复须知
@@ -84,9 +85,9 @@ library/{project}/
 3. 只改与根因相关的文件（项目 template/、config.yml、get_versions.sh；tools/build.py 仅当其自身有 bug）；**严禁改全局 config.yml 的 registry；严禁 git add -A 卷入无关改动**，只 add 本次相关文件
 4. 改 .sh 先 `bash -n`；构建验证用 `python3 tools/build.py --test library/<project> <version>`（不推送）；完整 loong64 构建耗时长时可只验证版本获取/模板渲染链路并如实说明
 5. Debian 基础镜像统一 forky；FROM 不加 registry 前缀；变体/标签命名规范见 docs/08
-6. 修复成功（重跑转绿）后回写项目 AGENTS.md「维护记录」表（日期/问题/修复/commit），表不存在按 docs/07 规范建立；autofix 未提交时 commit 列暂填「待提交」
+6. 修复后结构化沉淀由 autofix 脚本自动回写 `docs/ai-ops/ci-fix.md`（日期/项目/run/问题/修复/状态，同 run 幂等），**会话不写任何项目的 AGENTS.md**；人工提交修复后可更新对应行状态为「已提交(<hash>)」
 7. autofix 会话不执行 git add / git commit / git push（只分析+修复+验证）；`commit` 子命令（git add -A）仅用于人工审阅改动后的手动提交
-8. autofix 每次会话自动落盘 `log/ai-ops/{date}-{project}.md`（错误原因+修复过程，不入库）；结构化知识沉淀仍走项目 AGENTS.md「维护记录」表
+8. autofix 每次会话自动落盘 `log/ai-ops/{date}-{project}.md`（错误原因+修复过程，不入库）；结构化知识沉淀以 `docs/ai-ops/ci-fix.md` 为准（入库）
 
 ## 迁移经验文档与待迁移项目
 

@@ -12,10 +12,10 @@
 
 | 模式 | 触发方式 | 适用 |
 |------|----------|------|
-| 自动化（autofix） | `python3 tools/ai-ops.py autofix <project> [--run-id N]` | 一键闭环：脚本拉起 hermes 一次性会话完成 步骤2-5（分析→修复→验证）+ 回写维护记录；**不提交不推送**，改动留工作区，提交/直推/重跑由人工审阅后执行；会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md` |
+| 自动化（autofix） | `python3 tools/ai-ops.py autofix <project> [--run-id N]` | 一键闭环：脚本拉起 hermes 一次性会话完成 步骤2-5（分析→修复→验证）；**不提交不推送**，改动留工作区，提交/直推/重跑由人工审阅后执行；会话报告落盘 `log/ai-ops/{date}-{project}.md`，结构化记录由脚本回写 `docs/ai-ops/ci-fix.md` |
 | 逐步（手动会话） | 本会话按 §3 步骤逐条执行 | 需要人工实时确认、或 autofix 无法处理（外部凭据、平台级决策）时 |
 
-autofix 为幂等设计：同一失败 run 在维护记录表中已有处理记录（含上次修复的 commit）时会自动跳过并说明，不重复修复。
+autofix 为幂等设计：同一失败 run 已出现在 docs/ai-ops/ci-fix.md 中时会自动跳过并说明，不重复修复。
 
 autofix 提交边界（2026-09 确认）：**只做错误分析 + 代码修复 + 验证，不提交、不推送**；修复改动与维护记录回写保留在工作区，由人工审阅后按步骤 6-7 提交、直推、重跑。
 
@@ -105,11 +105,11 @@ gh run watch <run_id>                      # 或轮询 gh run view <run_id>
 - 转绿 → 进入步骤 8
 - 仍失败 → 回到步骤 3 分析新日志（重跑轮数计入止损计数）
 
-### 步骤 8 — 回写知识
+### 步骤 8 — 知识沉淀（autofix 模式由脚本自动完成）
 
-1. 项目 AGENTS.md「维护记录」表加一行：`| 日期 | 问题 | 修复 | commit |`；表不存在则按 docs/07 规范建立
-2. 新失败模式 →「已知问题」表（问题/影响/解决方案）
-3. 影响到全局的发现（tools/、build.yml、registry）→ 在 `docs/ai-ops/README.md` §8 证据附录补充
+1. **autofix 模式**：脚本自动回写 `docs/ai-ops/ci-fix.md`（一行表格：日期/项目/run/问题/修复/状态，同 run 幂等）；完整会话报告落盘 `log/ai-ops/{date}-{project}.md`。会话**不写项目 AGENTS.md**
+2. 新失败模式若影响面广（tools/、build.yml、registry）→ 手动在 `docs/ai-ops/README.md` §8 证据附录补充
+3. 修复提交后（人工执行提交/直推后），可选将 ci-fix.md 对应行「状态」更新为「已提交(&lt;hash&gt;)」
 
 ## 4. 演练模式（Phase 1 验收用）
 
