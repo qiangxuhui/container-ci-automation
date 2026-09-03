@@ -7,13 +7,16 @@
   rerun    <run-id>                 重跑指定 run（仅失败 jobs）
   dispatch <project_dir> [version]  手动触发项目 workflow（workflow_dispatch）
   commit   -m <msg>                 git add -A + commit（不 push）
-  autofix  <project_dir> [--run-id ID] [--max-turns N] [--timeout S]
-                                    脚本化闭环：调 `hermes chat -q` 分析失败日志 →
-                                    修复 → 验证（不提交、不推送；改动留工作区，
-                                    由人工审阅后提交并重跑），会话后核对工作区状态；
-                                    会话报告（错误原因+修复过程）自动落盘
-                                    log/ai-ops/{date}-{project}.md，结构化记录回写
-                                    docs/ai-ops/ci-fix.md
+  autofix  <project_dir> [--run-id ID] [--version V] [--max-turns N] [--timeout S] [--dry-run]
+                                   脚本化闭环：调 `hermes chat -q` 分析失败日志 →
+                                   修复 → 验证（不提交、不推送；改动留工作区，
+                                   由人工审阅后提交并重跑），会话后核对工作区状态；
+                                   会话报告（错误原因+修复过程）自动落盘
+                                   log/ai-ops/{date}-{project}.md，结构化记录回写
+                                   docs/ai-ops/ci-fix.md；
+                                   --version V：验证用版本号（必填，如 3.24.1）；
+                                   --dry-run：打印将执行的 hermes 命令但不执行
+                                   （仍先采集失败 run 解析 run id 与日志路径）
 
 原则：fetch/rerun/dispatch/commit 只做确定性动作（无需判断）；
 autofix 把「分析 + 修复决策」委托给 Hermes agent 的一次性会话执行，
@@ -24,6 +27,7 @@ autofix 把「分析 + 修复决策」委托给 Hermes agent 的一次性会话�
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -114,38 +118,31 @@ def collect_failed_runs(project_dir, since_hours, limit, out):
     return summary
 
 
-def build_autofix_prompt(project, run_id, log_path):
+def build_autofix_prompt(project, url, version):
     """构造传给 hermes chat -q 的自包含任务 prompt（一次性会话无记忆）。
 
-    autofix 边界（2026-09 确认）：只做错误分析 + 代码修复 + 验证，
-    不提交、不推送；改动保留在工作区，由人工审阅后提交并重跑。
+    成功标志 = `python3 tools/build.py --test {project} {version}` 通过；修复成功后
+    由 agent 自己在 log/ai-ops/{org}-{name}-{yyyymmdd}.md 记录报错原因与修复方法。
+    version 为必填参数：由 autofix 调用方 --version 强制传入（不做自动探测）。
+    autofix 边界（2026-09 确认）：只做失败分析 + 代码修复 + 验证，不提交、不推送；
+    改动保留在工作区，由人工审阅后提交并重跑。
     """
+    org, name = project_info(project)
+    today = datetime.now().strftime("%Y%m%d")
     return f"""你是 container-ci-automation 仓库的 AI 运维 agent，执行一次「失败分析 → 代码修复 → 验证」闭环任务。
 
-工作目录即仓库根（AGENTS.md 已注入项目背景与「AI 修复须知」）。任务上下文：
+工作目录即仓库根。任务上下文：
+
 - 项目目录：{project}
-- 失败 CI run id：{run_id}
-- 失败日志：{log_path}
+- 失败 CI 地址：{url}
+- 你目前的位置已经位于 container-ci-automation 项目根目录中
+- 问题解决成功的标志是: python3 tools/build.py --test {project} {version} 可以执行通过
+- {project}/AGENTS.md 中有一些关于 {project} 项目的信息你可以参考
 
-执行步骤（必须遵守 docs/ai-ops/runbook.md 与 AGENTS.md「AI 修复须知」）：
-1. 读失败日志（tail 关键段），对照 runbook 失败分类表确定根因；
-2. 读仓库根 docs/ai-ops/ci-fix.md 与 {project}/AGENTS.md 的已知问题：若该 run id 已出现在 ci-fix.md 中，直接报告并退出（幂等，不重复修复）；
-3. 修复：只改与根因相关的文件（{project}/template/、config.yml、get_versions.sh 等；tools/build.py 仅当其自身有 bug）。严禁改全局 config.yml 的 registry；修复改动一律留在工作区，不 git add；
-4. 验证（前置，通不过不结束）：
-   - 改过 .sh 先 bash -n；
-   - 能跑则 python3 tools/build.py --test {project} <version>（不推送）；完整 loong64 镜像构建耗时长，若预计超时可改为只验证版本获取/模板渲染链路，并在结果中如实说明未跑完整构建的原因；
-5. 结束：不执行 git add / git commit / git push，也**不要写任何项目的 AGENTS.md**（结构化记录由脚本回写，无需会话写文件）。本次会话任何情况下都不提交、不推送，提交由人工审阅改动后执行。
-
-最终回复将被脚本归档到 log/ai-ops/{{date}}-{{project}}.md（本地不入库），并提炼为一行结构化记录写入仓库 docs/ai-ops/ci-fix.md。请保持结构清晰、内容自包含。最终回复（中文，简明）必须包含：
-- 根因分类 + 一句话根因
-- 修改的文件与要点（若无需修改，说明原因：幂等命中 / 外部凭据缺失 / 已修复等）
-- 验证执行情况（bash -n / --test 结果，或未跑的原因）
-- 工作区改动清单（git status --short + 关键 diff 摘要）
-- 最后输出两行固定标记（供脚本回写 ci-fix.md，从上述结论提炼、各一句话）：
-  CI-FIX-ROOTCAUSE: <一句话根因>
-  CI-FIX-FIX: <一句话修复>
-
-若无法修复或验证不过，不要结束任务，给出原因与建议（是否需人工或外部配置，如 registry 凭据 secrets）。"""
+执行要求:
+    1. 只能修改 {project}/ 目录下的相关文件
+    2. 不执行 git add / git commit / git push
+    3. 在修复成功后，需要再 log/ai-ops/{org}-{name}-{today}.md 中记录此次报错的原因和修复方法"""
 
 
 def write_autofix_log(project_dir, entry, report, rc=0, session_id=None):
@@ -306,13 +303,20 @@ def cmd_autofix(args):
     run_id, log_path = entry["run_id"], entry["log_path"]
     log(f"开始 autofix：{org}/{name} run #{run_id}  log={log_path}")
 
-    prompt = build_autofix_prompt(args.project_dir, run_id, log_path)
+    log(f"验证版本：{args.version}（--version 强制传入）")
+    prompt = build_autofix_prompt(args.project_dir, entry["url"], args.version)
     head_before = run(["git", "rev-parse", "--short", "HEAD"])
 
     cmdv = ["hermes", "chat", "-q", prompt, "-Q",
             "--in", str(REPO_ROOT), "--yolo",
             "--max-turns", str(args.max_turns),
             "-t", "file,terminal"]
+    if args.dry_run:
+        # 打印实际将执行的 hermes 命令（含完整 prompt），不执行。
+        # 注意：仍已先采集失败 run（gh）并落盘日志，以解析 run id/日志路径。
+        print(shlex.join(cmdv))
+        log(f"dry-run：仅打印上述 hermes 命令，未执行（run #{run_id}，log={log_path}）")
+        return 0
     log("调用 hermes chat -q（一次性会话，典型耗时 1-10 分钟）...")
     try:
         r = subprocess.run(cmdv, capture_output=True, text=True, timeout=args.timeout)
@@ -376,11 +380,15 @@ def main():
     pa = sub.add_parser("autofix", help="脚本化闭环：调 hermes 分析日志→修复→验证（不提交）")
     pa.add_argument("project_dir", help="项目目录，如 library/alpine")
     pa.add_argument("--run-id", type=int, default=None, help="指定 run（默认取最新失败 run）")
+    pa.add_argument("--version", required=True,
+                    help="验证用版本号（必填，如 3.24.1；autofix 不做自动探测）")
     pa.add_argument("--since-hours", type=int, default=24, help="失败 run 时间窗口（小时），默认 24")
     pa.add_argument("--limit", type=int, default=30, help="拉取 run 上限，默认 30")
     pa.add_argument("--out", default=".ai-ops", help="日志输出目录")
     pa.add_argument("--max-turns", type=int, default=60, help="hermes 会话最大轮数，默认 60")
     pa.add_argument("--timeout", type=int, default=1500, help="hermes 会话超时（秒），默认 1500")
+    pa.add_argument("--dry-run", "-n", action="store_true",
+                    help="仅打印将执行的 hermes 命令，不执行（仍会先采集失败 run 解析 run id 与日志路径）")
     pa.set_defaults(fn=cmd_autofix)
 
     args = p.parse_args()
