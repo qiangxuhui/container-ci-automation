@@ -307,11 +307,11 @@ def main():
                 push=args.push,
             )
 
-        # 记录版本（测试模式或 dry-run 跳过）
-        if args.test or args.dry_run:
-            log("INFO", "跳过版本记录")
-        else:
+        # 记录版本：仅在实际推送（--push，且非测试/非 dry-run）时更新版本跟踪
+        if args.push and not args.test and not args.dry_run:
             update_versions_file(project_dir, version)
+        else:
+            log("INFO", "跳过版本记录")
 
 
 if __name__ == "__main__":
