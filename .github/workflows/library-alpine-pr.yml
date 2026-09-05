@@ -1,0 +1,28 @@
+name: "library/alpine PR/merge"
+
+on:
+  pull_request:
+    # library/alpine 目录下有文件变动时触发构建验证（仅构建，不推送）
+    paths:
+      - 'library/alpine/**'
+  push:
+    # merge 到 main 时（library/alpine 文件变动）构建并推送
+    branches:
+      - main
+    paths:
+      - 'library/alpine/**'
+
+jobs:
+  pr-build:
+    # PR 验证：仅构建不推送
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/build.yml
+    with:
+      project: library/alpine
+
+  merge-push:
+    # merge 推送：构建 + 推送
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/build-push.yml
+    with:
+      project: library/alpine
