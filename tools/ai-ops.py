@@ -7,6 +7,10 @@
   rerun    <run-id>                 重跑指定 run（仅失败 jobs）
   dispatch <project_dir> [version]  手动触发项目 workflow（workflow_dispatch）
   commit   -m <msg>                 git add -A + commit（不 push）
+  branch   <project_dir> <jobid> [--dry-run]
+                                   基于当前 HEAD 创建并切换到修复分支
+                                   {project_dir}-{YYYYMMDD}-{jobid}（仅本地，不推送）；
+                                   --dry-run：打印将执行的 git 命令但不执行
   autofix  <project_dir> [--run-id ID] [--version V] [--max-turns N] [--timeout S] [--dry-run]
                                    脚本化闭环：调 `hermes chat -q` 分析失败日志 →
                                    修复 → 验证（不提交、不推送；改动留工作区，
@@ -18,7 +22,7 @@
                                    --dry-run：打印将执行的 hermes 命令但不执行
                                    （仍先采集失败 run 解析 run id 与日志路径）
 
-原则：fetch/rerun/dispatch/commit 只做确定性动作（无需判断）；
+原则：fetch/rerun/dispatch/branch/commit 只做确定性动作（无需判断）；
 autofix 把「分析 + 修复决策」委托给 Hermes agent 的一次性会话执行，
 脚本负责组装上下文、调用、核对结果、落盘会话记录。autofix 边界
 （2026-09 确认）：只做错误分析 + 代码修复 + 验证，不提交不推送，
@@ -272,6 +276,21 @@ def cmd_dispatch(args):
     return 0
 
 
+def cmd_branch(args):
+    """基于当前 HEAD 创建并切换修复分支 {project_dir}-{YYYYMMDD}-{jobid}（仅本地，不推送）。"""
+    date = datetime.now().strftime("%Y%m%d")
+    branch = f"{args.project_dir}-{date}-{args.jobid}"
+    cmdv = ["git", "checkout", "-b", branch]
+    if args.dry_run:
+        # 仅打印实际将执行的 git 命令，不执行（与 autofix --dry-run 语义一致）
+        print(shlex.join(cmdv))
+        log(f"dry-run：仅打印上述命令，未执行（分支 {branch}）")
+        return 0
+    run(cmdv)
+    log(f"已创建并切换到分支 {branch}")
+    return 0
+
+
 def cmd_commit(args):
     stat = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
     if not stat.stdout.strip():
@@ -376,6 +395,13 @@ def main():
     pc = sub.add_parser("commit", help="git add -A + commit（不 push）")
     pc.add_argument("-m", "--message", required=True, help="提交信息")
     pc.set_defaults(fn=cmd_commit)
+
+    pb = sub.add_parser("branch", help="基于当前 HEAD 创建修复分支 {project_dir}-{YYYYMMDD}-{jobid}")
+    pb.add_argument("project_dir", help="项目目录，如 library/alpine")
+    pb.add_argument("jobid", help="job/run id，如 33604587228")
+    pb.add_argument("--dry-run", "-n", action="store_true",
+                    help="仅打印将执行的 git 命令，不执行")
+    pb.set_defaults(fn=cmd_branch)
 
     pa = sub.add_parser("autofix", help="脚本化闭环：调 hermes 分析日志→修复→验证（不提交）")
     pa.add_argument("project_dir", help="项目目录，如 library/alpine")
