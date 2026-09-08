@@ -11,6 +11,13 @@
                                    基于当前 HEAD 创建并切换到修复分支
                                    {project_dir}-{YYYYMMDD}-{jobid}（仅本地，不推送）；
                                    --dry-run：打印将执行的 git 命令但不执行
+  commit-pr <project_dir> <run-id> [--dry-run]
+                                   提交修改并创建 PR：git add {project_dir}/（仅项目目录，
+                                   不用 add -A）→ git commit -F
+                                   log/ai-ops/{org}-{name}-{YYYYMMDD}-{run-id}-commit-msg.md
+                                   → git push -u origin <当前分支> → gh pr create
+                                   （base=main，标题/正文取自 commit-msg 文件）；
+                                   --dry-run：打印全部将执行的命令但不执行
   autofix  <project_dir> [--run-id ID] [--version V] [--max-turns N] [--timeout S] [--dry-run]
                                    脚本化闭环：调 `hermes chat -q` 分析失败日志 →
                                    修复 → 验证（不提交、不推送；改动留工作区，
@@ -22,7 +29,7 @@
                                    --dry-run：打印将执行的 hermes 命令但不执行
                                    （仍先采集失败 run 解析 run id 与日志路径）
 
-原则：fetch/rerun/dispatch/branch/commit 只做确定性动作（无需判断）；
+原则：fetch/rerun/dispatch/branch/commit/commit-pr 只做确定性动作（无需判断）；
 autofix 把「分析 + 修复决策」委托给 Hermes agent 的一次性会话执行，
 脚本负责组装上下文、调用、核对结果、落盘会话记录。autofix 边界
 （2026-09 确认）：只做错误分析 + 代码修复 + 验证，不提交不推送，
@@ -303,6 +310,77 @@ def cmd_commit(args):
     return 0
 
 
+def find_commit_msg_file(org, name, run_id):
+    """定位 commit-msg 文件 log/ai-ops/{org}-{name}-{YYYYMMDD}-{run_id}-commit-msg.md。
+
+    日期段用通配符匹配（commit-msg 的 YYYYMMDD 是 run 的日期，不一定等于今天），
+    多命中取最新；无命中时列出 log/ai-ops 候选文件并 exit 1。
+    """
+    pattern = f"{org}-{name}-*-{run_id}-commit-msg.md"
+    candidates = sorted(LOG_DIR.glob(pattern),
+                        key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        log(f"未找到 commit-msg 文件（搜索模式 log/ai-ops/{pattern}），log/ai-ops 候选：")
+        for p in sorted(LOG_DIR.glob(f"{org}-{name}-*.md")):
+            log(f"  {p.name}")
+        sys.exit(1)
+    return candidates[0]
+
+
+def cmd_commit_pr(args):
+    """提交修改并发起 PR。
+
+    流程（--dry-run/-n 打印全部命令但均不执行）：
+      1. 定位 log/ai-ops/{org}-{name}-{YYYYMMDD}-{run_id}-commit-msg.md
+      2. git add {project_dir}/（只加项目目录，不用 git add -A，不卷入无关改动）
+      3. git commit -F <commit-msg 文件>（首行为标题，其余为正文）
+      4. git push -u origin <当前分支>
+      5. gh pr create --base main --head <当前分支>（标题/正文取自 commit-msg 文件；
+         PR 验证由 .github/workflows/library-alpine-pr.yml 负责：仅构建，不推送）
+    安全约束：当前分支为 main/master 时拒绝执行（PR 应从修复分支发起）。
+    """
+    org, name = project_info(args.project_dir)
+    msg_file = find_commit_msg_file(org, name, args.run_id)
+    lines = msg_file.read_text(encoding="utf-8").splitlines()
+    title = lines[0].strip() if lines else f"fix {org}/{name}"
+    body = "\n".join(lines[2:]).strip()
+
+    branch = run(["git", "branch", "--show-current"])
+    if branch in ("main", "master"):
+        log(f"当前分支是 {branch}，拒绝执行：应从修复分支（branch 子命令创建的 "
+            f"{args.project_dir}-{{YYYYMMDD}}-{{jobid}}）发起 PR")
+        sys.exit(1)
+
+    cmdv = [
+        ["git", "add", f"{args.project_dir}/"],
+        ["git", "commit", "-F", str(msg_file)],
+        ["git", "push", "-u", "origin", branch],
+        ["gh", "pr", "create", "--base", "main", "--head", branch,
+         "--title", title, "--body", body],
+    ]
+    if args.dry_run:
+        for c in cmdv:
+            print(shlex.join(c))
+        log(f"dry-run：仅打印上述命令，未执行（commit-msg={msg_file}，分支 {branch}）")
+        return 0
+
+    stat = subprocess.run(["git", "status", "--porcelain", "--", f"{args.project_dir}/"],
+                          capture_output=True, text=True)
+    if not stat.stdout.strip():
+        log(f"{args.project_dir}/ 无改动可提交")
+        return 0
+
+    run(cmdv[0])
+    run(cmdv[1])
+    h = run(["git", "rev-parse", "--short", "HEAD"])
+    log(f"已提交 {h}（仅 {args.project_dir}/，消息来自 {msg_file.name}）")
+    run(cmdv[2])
+    log(f"已推送分支 {branch}（origin）")
+    out = run(cmdv[3])
+    log(out or f"已发起 PR: {branch} → main")
+    return 0
+
+
 def cmd_autofix(args):
     org, name = project_info(args.project_dir)
     entries = collect_failed_runs(args.project_dir, args.since_hours, args.limit, args.out)
@@ -402,6 +480,14 @@ def main():
     pb.add_argument("--dry-run", "-n", action="store_true",
                     help="仅打印将执行的 git 命令，不执行")
     pb.set_defaults(fn=cmd_branch)
+
+    pp = sub.add_parser("commit-pr",
+                        help="提交修改并创建 PR：add 项目目录→commit -F commit-msg→push→gh pr create")
+    pp.add_argument("project_dir", help="项目目录，如 library/alpine")
+    pp.add_argument("run_id", help="run id，如 34050474275")
+    pp.add_argument("--dry-run", "-n", action="store_true",
+                    help="仅打印将执行的全部命令（git add/commit/push、gh pr create），不执行")
+    pp.set_defaults(fn=cmd_commit_pr)
 
     pa = sub.add_parser("autofix", help="脚本化闭环：调 hermes 分析日志→修复→验证（不提交）")
     pa.add_argument("project_dir", help="项目目录，如 library/alpine")
