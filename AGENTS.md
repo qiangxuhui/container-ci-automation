@@ -21,7 +21,7 @@
 **开发计划**：`docs/ai-ops/README.md`（决策记录、三阶段计划、待确认项清单）。
 **修复执行手册**：`docs/ai-ops/runbook.md`（Hermes 会话 / autofix 按此执行闭环）。
 
-**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环。
+**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/branch/commit-pr/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环。
 
 ## 核心工具
 
@@ -29,7 +29,7 @@
 |------|------|
 | `config.yml` | 全局配置（registry 等） |
 | `tools/build.py` | 统一入口，所有项目共用（--test / --dry-run / --versions / --push） |
-| `tools/ai-ops.py` | AI 运维工具：确定性动作（fetch/rerun/dispatch/commit）+ autofix 一键闭环（分析+修复+验证，不提交；会话报告落盘 log/ai-ops/） |
+| `tools/ai-ops.py` | AI 运维工具：确定性动作（fetch/rerun/dispatch/commit/branch/commit-pr）+ autofix 一键闭环（分析+修复+验证，不提交；会话报告落盘 log/ai-ops/）；commit-pr：只 add 项目目录 → commit -F commit-msg → push → gh pr create |
 | `.github/workflows/build.yml` | 可复用 CI workflow（构建 + 推送 + 提交版本跟踪） |
 | `.github/workflows/library-*.yml` | 每个项目一个定时 workflow（试点期仅 alpine 启用 schedule） |
 
@@ -86,7 +86,7 @@ library/{project}/
 4. 改 .sh 先 `bash -n`；构建验证用 `python3 tools/build.py --test library/<project> <version>`（不推送）；完整 loong64 构建耗时长时可只验证版本获取/模板渲染链路并如实说明
 5. Debian 基础镜像统一 forky；FROM 不加 registry 前缀；变体/标签命名规范见 docs/08
 6. 修复后结构化沉淀由 autofix 脚本自动回写 `docs/ai-ops/ci-fix.md`（日期/项目/run/问题/修复/状态，同 run 幂等），**会话不写任何项目的 AGENTS.md**；人工提交修复后可更新对应行状态为「已提交(<hash>)」
-7. autofix 会话不执行 git add / git commit / git push（只分析+修复+验证）；`commit` 子命令（git add -A）仅用于人工审阅改动后的手动提交
+7. autofix 会话不执行 git add / git commit / git push（只分析+修复+验证）；`commit-pr` 子命令（只 add 项目目录 → commit -F commit-msg → push → gh pr create）用于人工审阅改动后提交并发起 PR；`commit` 子命令（git add -A）仅用于人工审阅改动后的手动提交
 8. autofix 每次会话自动落盘 `log/ai-ops/{date}-{project}.md`（错误原因+修复过程，不入库）；结构化知识沉淀以 `docs/ai-ops/ci-fix.md` 为准（入库）
 
 ## 迁移经验文档与待迁移项目
