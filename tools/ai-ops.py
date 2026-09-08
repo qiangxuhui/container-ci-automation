@@ -11,13 +11,13 @@
                                    基于当前 HEAD 创建并切换到修复分支
                                    {project_dir}-{YYYYMMDD}-{jobid}（仅本地，不推送）；
                                    --dry-run：打印将执行的 git 命令但不执行
-  commit-msg <project_dir> <run-id> [--timeout S] [--dry-run]
-                                   读取当日 AI 运维会话日志
-                                   log/ai-ops/{org}-{name}-{YYYYMMDD}.md，调
-                                   `hermes chat -q` 一次性会话把其中 run #{run-id}
-                                   的修复内容总结为 commit message（标题形如
-                                   fix library/alpine: ...），落盘
+  commit-pr <project_dir> <run-id> [--dry-run]
+                                   提交修改并创建 PR：git add {project_dir}/（仅项目目录，
+                                   不用 add -A）→ git commit -F
                                    log/ai-ops/{org}-{name}-{YYYYMMDD}-{run-id}-commit-msg.md
+                                   → git push -u origin <当前分支> → gh pr create
+                                   （base=main，标题/正文取自 commit-msg 文件）；
+                                   --dry-run：打印全部将执行的命令但不执行
   autofix  <project_dir> [--run-id ID] [--version V] [--max-turns N] [--timeout S] [--dry-run]
                                    脚本化闭环：调 `hermes chat -q` 分析失败日志 →
                                    修复 → 验证（不提交、不推送；改动留工作区，
@@ -29,12 +29,11 @@
                                    --dry-run：打印将执行的 hermes 命令但不执行
                                    （仍先采集失败 run 解析 run id 与日志路径）
 
-原则：fetch/rerun/dispatch/branch/commit 只做确定性动作（无需判断）；
+原则：fetch/rerun/dispatch/branch/commit/commit-pr 只做确定性动作（无需判断）；
 autofix 把「分析 + 修复决策」委托给 Hermes agent 的一次性会话执行，
 脚本负责组装上下文、调用、核对结果、落盘会话记录。autofix 边界
 （2026-09 确认）：只做错误分析 + 代码修复 + 验证，不提交不推送，
-提交时机由人工决定。commit-msg 同理：读取当日会话日志，委托 Hermes
-一次性会话总结为 commit message（标题形如 fix library/alpine），脚本落盘。
+提交时机由人工决定。
 """
 
 import argparse
@@ -155,25 +154,6 @@ def build_autofix_prompt(project, url, version):
     1. 只能修改 {project}/ 目录下的相关文件
     2. 不执行 git add / git commit / git push
     3. 在修复成功后，需要再 log/ai-ops/{org}-{name}-{today}.md 中记录此次报错的原因和修复方法"""
-
-
-def build_commit_msg_prompt(project_dir, run_id, doc_path):
-    """构造让 hermes chat 把会话日志总结为 commit message 的一次性 prompt。
-
-    输入是当日 AI 运维会话日志（log/ai-ops/{org}-{name}-{YYYYMMDD}.md，可能含多个
-    run 段落）；让 agent 只总结 run #{run_id} 对应的「错误原因 + 修复方法 +
-    验证结果」，输出标题形如 `fix library/alpine: ...` 的 commit message。
-    """
-    return f"""你是 container-ci-automation 仓库的 AI 运维助手，任务是把一次修复闭环的会话日志总结成 git commit message。
-
-读取会话日志文档：{doc_path}
-
-该文档记录了 {project_dir} 项目某次 CI 失败修复闭环的会话（含错误原因、修复方法、验证结果），其中 run #{run_id} 对应的段落是本次要总结的修复内容；若文档含多个 run 的段落，只总结 run #{run_id} 那一段。
-
-输出格式（只输出 commit message 本身，不要任何前后缀说明或代码块围栏）：
-1. 第一行为标题，形如：fix library/alpine: <一句话概括本次修复>
-2. 空一行
-3. 正文（commit body）：用简洁中文条目提炼 错误原因 / 修复方法 / 验证结果，3-8 行为宜"""
 
 
 def write_autofix_log(project_dir, entry, report, rc=0, session_id=None):
@@ -330,58 +310,75 @@ def cmd_commit(args):
     return 0
 
 
-def cmd_commit_msg(args):
-    """把当日 AI 运维会话日志总结为 commit message（调 hermes 一次性会话），落盘 log/ai-ops/。
+def find_commit_msg_file(org, name, run_id):
+    """定位 commit-msg 文件 log/ai-ops/{org}-{name}-{YYYYMMDD}-{run_id}-commit-msg.md。
 
-    读 log/ai-ops/{org}-{name}-{YYYYMMDD}.md（agent 自写会话日志，当日多次执行可能含
-    多个 run 段落），调 hermes 只总结 run #{run_id} 段落；输出标题形如
-    `fix library/alpine: ...` 的 commit message 到
-    log/ai-ops/{org}-{name}-{YYYYMMDD}-{run_id}-commit-msg.md（均不入库）。
+    日期段用通配符匹配（commit-msg 的 YYYYMMDD 是 run 的日期，不一定等于今天），
+    多命中取最新；无命中时列出 log/ai-ops 候选文件并 exit 1。
+    """
+    pattern = f"{org}-{name}-*-{run_id}-commit-msg.md"
+    candidates = sorted(LOG_DIR.glob(pattern),
+                        key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        log(f"未找到 commit-msg 文件（搜索模式 log/ai-ops/{pattern}），log/ai-ops 候选：")
+        for p in sorted(LOG_DIR.glob(f"{org}-{name}-*.md")):
+            log(f"  {p.name}")
+        sys.exit(1)
+    return candidates[0]
+
+
+def cmd_commit_pr(args):
+    """提交修改并发起 PR。
+
+    流程（--dry-run/-n 打印全部命令但均不执行）：
+      1. 定位 log/ai-ops/{org}-{name}-{YYYYMMDD}-{run_id}-commit-msg.md
+      2. git add {project_dir}/（只加项目目录，不用 git add -A，不卷入无关改动）
+      3. git commit -F <commit-msg 文件>（首行为标题，其余为正文）
+      4. git push -u origin <当前分支>
+      5. gh pr create --base main --head <当前分支>（标题/正文取自 commit-msg 文件；
+         PR 验证由 .github/workflows/library-alpine-pr.yml 负责：仅构建，不推送）
+    安全约束：当前分支为 main/master 时拒绝执行（PR 应从修复分支发起）。
     """
     org, name = project_info(args.project_dir)
-    today = datetime.now().strftime("%Y%m%d")
-    doc = LOG_DIR / f"{org}-{name}-{today}.md"
-    if not doc.exists():
-        log(f"找不到当日会话日志 {doc}（{org}/{name} 今日可能尚未跑 autofix）")
-        cands = sorted(set(LOG_DIR.glob(f"{org}-{name}-*.md")) | set(LOG_DIR.glob(f"*-{name}.md")))
-        if cands:
-            log("log/ai-ops/ 下相关日志文件：")
-            for c in cands:
-                log(f"  {c.name}")
+    msg_file = find_commit_msg_file(org, name, args.run_id)
+    lines = msg_file.read_text(encoding="utf-8").splitlines()
+    title = lines[0].strip() if lines else f"fix {org}/{name}"
+    body = "\n".join(lines[2:]).strip()
+
+    branch = run(["git", "branch", "--show-current"])
+    if branch in ("main", "master"):
+        log(f"当前分支是 {branch}，拒绝执行：应从修复分支（branch 子命令创建的 "
+            f"{args.project_dir}-{{YYYYMMDD}}-{{jobid}}）发起 PR")
         sys.exit(1)
 
-    out = LOG_DIR / f"{org}-{name}-{today}-{args.run_id}-commit-msg.md"
-    prompt = build_commit_msg_prompt(args.project_dir, args.run_id, doc)
-    cmdv = ["hermes", "chat", "-q", prompt, "-Q",
-            "--in", str(REPO_ROOT), "--yolo",
-            "--max-turns", str(args.max_turns),
-            "-t", "file,terminal"]
+    cmdv = [
+        ["git", "add", f"{args.project_dir}/"],
+        ["git", "commit", "-F", str(msg_file)],
+        ["git", "push", "-u", "origin", branch],
+        ["gh", "pr", "create", "--base", "main", "--head", branch,
+         "--title", title, "--body", body],
+    ]
     if args.dry_run:
-        # 仅打印实际将执行的 hermes 命令（含完整 prompt），不执行。
-        print(shlex.join(cmdv))
-        log(f"dry-run：仅打印上述命令，未执行（读 {doc}，写 {out}）")
+        for c in cmdv:
+            print(shlex.join(c))
+        log(f"dry-run：仅打印上述命令，未执行（commit-msg={msg_file}，分支 {branch}）")
         return 0
-    log(f"调用 hermes chat 总结 commit message（run #{args.run_id}，读 {doc.name}）...")
-    try:
-        r = subprocess.run(cmdv, capture_output=True, text=True, timeout=args.timeout)
-    except subprocess.TimeoutExpired:
-        log(f"hermes 会话超时（>{args.timeout}s）。可调大 --timeout 重试。")
-        sys.exit(1)
-    print(r.stdout)
-    if r.returncode != 0:
-        log(f"hermes 退出码 {r.returncode}，仍将 stdout 落盘供人工参考")
-        if r.stderr.strip():
-            log("stderr 片段: " + r.stderr.strip()[:1000])
-    msg = (r.stdout or "").strip()
-    if not msg:
-        log("hermes 无输出，未生成 commit-msg 文件")
-        return 1
-    if out.exists():
-        log(f"目标文件已存在，覆盖：{out}")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(msg + "\n", encoding="utf-8")
-    log(f"commit message 已写入 {out}")
-    return 0 if r.returncode == 0 else 1
+
+    stat = subprocess.run(["git", "status", "--porcelain", "--", f"{args.project_dir}/"],
+                          capture_output=True, text=True)
+    if not stat.stdout.strip():
+        log(f"{args.project_dir}/ 无改动可提交")
+        return 0
+
+    run(cmdv[0])
+    run(cmdv[1])
+    h = run(["git", "rev-parse", "--short", "HEAD"])
+    log(f"已提交 {h}（仅 {args.project_dir}/，消息来自 {msg_file.name}）")
+    run(cmdv[2])
+    log(f"已推送分支 {branch}（origin）")
+    out = run(cmdv[3])
+    log(out or f"已发起 PR: {branch} → main")
+    return 0
 
 
 def cmd_autofix(args):
@@ -484,15 +481,13 @@ def main():
                     help="仅打印将执行的 git 命令，不执行")
     pb.set_defaults(fn=cmd_branch)
 
-    pcm = sub.add_parser("commit-msg",
-                         help="把当日 AI 运维会话日志总结为 commit message（调 hermes chat，标题形如 fix library/alpine）")
-    pcm.add_argument("project_dir", help="项目目录，如 library/alpine")
-    pcm.add_argument("run_id", type=int, help="run id（如 34050474275）")
-    pcm.add_argument("--max-turns", type=int, default=60, help="hermes 会话最大轮数，默认 60")
-    pcm.add_argument("--timeout", type=int, default=600, help="hermes 会话超时（秒），默认 600")
-    pcm.add_argument("--dry-run", "-n", action="store_true",
-                     help="仅打印将执行的 hermes 命令，不执行")
-    pcm.set_defaults(fn=cmd_commit_msg)
+    pp = sub.add_parser("commit-pr",
+                        help="提交修改并创建 PR：add 项目目录→commit -F commit-msg→push→gh pr create")
+    pp.add_argument("project_dir", help="项目目录，如 library/alpine")
+    pp.add_argument("run_id", help="run id，如 34050474275")
+    pp.add_argument("--dry-run", "-n", action="store_true",
+                    help="仅打印将执行的全部命令（git add/commit/push、gh pr create），不执行")
+    pp.set_defaults(fn=cmd_commit_pr)
 
     pa = sub.add_parser("autofix", help="脚本化闭环：调 hermes 分析日志→修复→验证（不提交）")
     pa.add_argument("project_dir", help="项目目录，如 library/alpine")
