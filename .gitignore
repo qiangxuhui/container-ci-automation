@@ -28,3 +28,6 @@ __pycache__
 
 # AI 运维会话记录（autofix 错误原因+修复过程；知识沉淀以项目 AGENTS.md 维护记录为准）
 log/ai-ops/
+
+# ai-ops 修复上下文状态（fetch 写入，后续命令读取）
+.aiops-fix-info.json

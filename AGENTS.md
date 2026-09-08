@@ -21,7 +21,7 @@
 **开发计划**：`docs/ai-ops/README.md`（决策记录、三阶段计划、待确认项清单）。
 **修复执行手册**：`docs/ai-ops/runbook.md`（Hermes 会话 / autofix 按此执行闭环）。
 
-**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/branch/commit-pr/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环。
+**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/branch/commit-pr/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环；**tools/ai-ops.py 重构进行中**：目标文件 tools/ai-ops-1.py（已建空文件未写内容，方案见 docs/ai-ops/refactor-ai-ops.md，重构期间勿再直接改 tools/ai-ops.py）。
 
 ## 核心工具
 
@@ -74,6 +74,7 @@ library/{project}/
 | `docs/ai-ops/README.md` | **AI 运维工具开发计划（当前目标）**：决策、三阶段计划、待确认项 |
 | `docs/ai-ops/runbook.md` | **AI 修复执行手册**：闭环流程、失败分类表、演练/止损、命令速查 |
 | `docs/ai-ops/ci-fix.md` | **CI 修复记录**：结构化知识沉淀（autofix 脚本自动回写） |
+| `docs/ai-ops/refactor-ai-ops.md` | **ai-ops.py 重构方案**：现状结构、动机、目标形态、兼容性清单、待确认项（重构期间前置信息入口） |
 | `migration-status.md` | 迁移进度跟踪（本地个人使用，被 .gitignore 忽略，仓库内不存在） |
 
 ## AI 修复须知

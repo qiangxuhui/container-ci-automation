@@ -15,7 +15,7 @@
 | 工具形态 | 确定性动作（采集、拉日志、触发重跑、git 提交）脚本化为 tools/ai-ops.py；**分析+修复决策由 Hermes agent 按执行手册（runbook）驱动**；autofix 只到验证为止，不提交不推送 |
 | 试点项目 | library/alpine：唯一已接入每日定时 CI 的项目，暴露真实失败样本；单变体、无编译，闭环链路最简 |
 | 试点失败来源 | 优先用 alpine 每日真实构建产生的失败 run；无失败可修时按 runbook §4 主动制造失败演练闭环 |
-| 文档位置 | ai-ops 文档集中于 `docs/ai-ops/`：`README.md`（本文件，计划与决策）+ `runbook.md`（执行手册） |
+| 文档位置 | ai-ops 文档集中于 `docs/ai-ops/`：`README.md`（本文件，计划与决策）+ `runbook.md`（执行手册）+ `refactor-ai-ops.md`（tools/ai-ops.py 重构方案，2026-09-08 起） |
 
 ## 1. 背景与目标
 
