@@ -71,7 +71,7 @@
 - url：失败 run 的 GitHub Actions 页面链接（gh run list 的 url 字段；后续 autofix 拼 prompt 用）
 - date：fetch 执行当天日期 YYYYMMDD（本地时区 datetime.now()，不随 run 创建时间；commit-msg/process-error 文件名与 branch 的日期段即此日期）
 - branch：`fix-{org}-{project}-{date}-{runid}`（后续 branch 子命令使用，仅本地/推送用）
-- process-error-file / commit-msg-file：文件名（使用时拼 LOG_DIR=log/ai-ops/），对应修复过程记录与 commit message
+- process-error-file / commit-msg-file：文件名（使用时拼 LOG_DIR=log/ai-ops/）；autofix 提示词要求 agent 把报错原因+修复方法写入 process-error-file 对应文件，commit-msg-file 对应 commit message
 - versions：本次修复涉及的版本号（从 run 标题提取 x.y.z，提取不到为 []）
 - 追加字段（如需）：由后续迭代决定，保持本结构即可
 
@@ -85,14 +85,14 @@
 
 ### 4.3 后续命令（待迭代，不在本次范围）
 
-- rerun/dispatch/branch/commit/commit-pr/autofix 均改为：**从 `.aiops-fix-info.json` 读 org/project/runid/date/文件路径**，不再接收 project_dir/run_id 位置参数（autofix 的 --version 仍保留必填）
+- rerun/dispatch/branch/commit/commit-pr/autofix 均改为：**从 `.aiops-fix-info.json` 读 org/project/runid/date/文件路径**，不再接收 project_dir/run_id 位置参数（autofix 的 --version 改为可选且允许为空：缺省取状态文件 versions 首个版本，versions 为空则默认空字符串）
 - 全部支持 `--dry-run/-n`
 - 读取时文件缺失 → 明确报错提示先执行 fetch
 
 ## 5. 移植时必须保留的行为清单（兼容性细节）
 
 - **fetch**：FAIL_CONCLUSIONS={failure, cancelled, timed_out, startup_failure}；时间窗过滤比较 createdAt（UTC ISO）；`gh run list --workflow library-{name}.yml --branch main --status completed`；`gh run view --log-failed` 失败回退 `--log`；日志落盘父目录自动创建；提示走 stderr、数据走 stdout
-- **autofix**（原逻辑，迭代时保留）：--version 必填（不做自动探测）；--run-id 不在失败列表时列出候选并 exit 1；默认取最新失败；hermes 命令形如 `hermes chat -q <prompt> -Q --in <REPO_ROOT> --yolo --max-turns N`；超时 TimeoutExpired → rc=124 落盘 + ci-fix 回写「会话超时」并 exit 1；会话后 HEAD 比对，有新提交则告警；--dry-run 仍先采集 run 再只打印命令
+- **autofix**（原逻辑，迭代时保留）：--version 可选且允许为空（缺省取状态文件 versions 首个版本；versions 为空则默认空字符串；不做自动探测）；--run-id 不在失败列表时列出候选并 exit 1；默认取最新失败；hermes 命令形如 `hermes chat -q <prompt> -Q --in <REPO_ROOT> --yolo --max-turns N`；超时 TimeoutExpired → rc=124 落盘并 exit 1；会话后 HEAD 比对，有新提交则告警；--dry-run 仍先采集 run 再只打印命令
 - **commit-pr**（原逻辑，迭代时保留）：commit-msg 文件按 `{org}-{name}-*-{runid}-commit-msg.md` 通配日期、取最新，无命中列出 log/ai-ops 候选并 exit 1；当前分支为 main/master 拒绝；仅 `git add {project_dir}/`；dry-run 打印全部命令不执行
 - **branch**（原逻辑，迭代时保留）：分支名改为 `fix-{org}-{project}-{date}-{runid}`（随状态文件）；dry-run 仅打印
 - **dispatch**：version 通过 `-f version=` 传入；留空为自动检测；workflow 文件名 `library-{name}.yml`

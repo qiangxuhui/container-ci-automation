@@ -31,7 +31,7 @@
 2. 结合项目上下文（library/\<project\>/AGENTS.md）定位失败原因
 3. 在约束范围内自动修复（模板、脚本、配置），本地验证后提交
 4. 重跑失败的 workflow 直到绿色，或明确交接人工
-5. 把每次修复沉淀为结构化记录（docs/ai-ops/ci-fix.md）+ 详细会话报告（log/ai-ops/），越修越快
+5. 把每次修复的完整会话报告落盘 log/ai-ops/（不入库），越修越快（docs/ai-ops/ci-fix.md 为历史沉淀，2026-09-09 起不再自动回写）
 
 **实施路径（增量）**：先走通一个项目（library/alpine）的 ai-ops 闭环，验证工具与手册的可用性；再推广到其他已迁移项目；最后接入每日定时巡检（Hermes cron）。三个阶段的边界见 §4。
 
@@ -65,7 +65,7 @@
 | 项目 workflow | `.github/workflows/library-*.yml`（试点期仅 alpine 接通 schedule；终态每项目 1 个+每日定时） | 触发构建 |
 | 构建 workflow | `.github/workflows/build.yml`（workflow_call 可复用） | checkout → build.py --push → 提交版本跟踪 |
 | 统一入口 | `tools/build.py` | 获取版本 → update.sh → apply-templates.sh → buildx 构建；`--test` 本地验证不推送 |
-| AI 运维工具 | `tools/ai-ops.py` | 确定性动作：fetch（采集失败 run+日志）/ rerun / dispatch / commit / branch（创建修复分支）/ commit-pr（提交修改并发起 PR：只 add 项目目录 → commit -F commit-msg → push → gh pr create）；autofix 组装上下文并调用 hermes 一次性会话完成分析→修复→验证，会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md`，结构化记录（一行表格）由脚本回写 `docs/ai-ops/ci-fix.md` |
+| AI 运维工具 | `tools/ai-ops.py` | 确定性动作：fetch（采集失败 run+日志）/ rerun / dispatch / commit / branch（创建修复分支）/ commit-pr（提交修改并发起 PR：只 add 项目目录 → commit -F commit-msg → push → gh pr create）；autofix 组装上下文并调用 hermes 一次性会话完成分析→修复→验证，会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md` |
 | 项目上下文 | `library/<project>/AGENTS.md` | 上游映射、本地调整、已知问题、维护记录 —— AI 修复的决策依据（规范见 docs/07-agents-md.md） |
 | 修复执行手册 | `docs/ai-ops/runbook.md` | Hermes agent / autofix 会话按此执行「采集→分析→修复→验证→直推→重跑→回写」闭环 |
 | 迁移规范 | `docs/08-migration-experience.md` | 修复模板/脚本时必须遵循的规则（FROM 不加 registry、变体命名、forky 约束等） |
@@ -82,7 +82,7 @@
 | R2 | 失败日志与上下文聚合 | 每个失败 run 产出结构化摘要：日志尾部关键错误 + 对应项目 AGENTS.md 已知问题命中情况 + 失败分类 |
 | R3 | 自动修复 | 在 §6 约束内修改（模板/脚本/配置），先用 `bash -n`、再用 `build.py --test` 在 loong64 环境真实验证 |
 | R4 | 提交与重跑 | 修复经过验证后提交，重新触发失败 workflow，确认转绿并记录 |
-| R5 | 知识沉淀 | 每次成功修复由脚本回写 `docs/ai-ops/ci-fix.md`（一行表格：日期/项目/run/问题/修复/状态），完整报告落盘 `log/ai-ops/`；后续 session 读 ci-fix.md 幂等命中、读 log 复用历史上下文 |
+| R5 | 知识沉淀 | 每次成功修复的完整会话报告落盘 `log/ai-ops/`（不入库），后续 session 读 log 复用历史上下文；`docs/ai-ops/ci-fix.md` 为历史沉淀（2026-09-09 起不再自动回写） |
 | R6 | 人工兜底 | 无法定位/连续失败/验证不过的，明确产出「交接报告」而非无限循环 |
 
 ## 4. 分阶段开发计划
@@ -139,7 +139,7 @@
 
 ## 5. 运行形态（两阶段）
 
-**当前（Phase 1-2，手动执行）**：没有定时任务。用户手动发起一次 Hermes 会话（或直接运行 `tools/ai-ops.py autofix`）。autofix 自动模式按 runbook 完成「采集 → 分析 → 修复 → 验证 → 回写维护记录」，**不提交不推送**，改动留工作区；人工审阅后执行提交、直推、重跑与转绿确认（边界见 §6）。逐步模式按手册全流程执行，可随时与用户确认。设计上保持幂等，同一失败 run 重复执行不会重复修复。
+**当前（Phase 1-2，手动执行）**：没有定时任务。用户手动发起一次 Hermes 会话（或直接运行 `tools/ai-ops.py autofix`）。autofix 自动模式完成「分析 → 修复 → 验证」，会话报告自动落盘 `log/ai-ops/`，**不提交不推送**，改动留工作区；人工审阅后执行提交、重跑与转绿确认（边界见 §6）。
 
 **终态（Phase 3，定时自动）**：Hermes 本地 cron（方案 A）包装同一套工具每日自动执行；agent 只读 GitHub，构建验证走 loong64 机器；当日无失败 run 时空跑结束。
 
@@ -151,7 +151,7 @@
 - **不改**：全局 config.yml 的 registry、上游同步策略、processed_versions.txt 的手工内容
 - **只改根因相关文件**：项目 template/、config.yml、get_versions.sh；tools/build.py 仅当其自身有 bug。严禁 `git add -A` 卷入无关改动（仓库可能有其他未提交文件，只 add 本次相关文件）
 - **验证前置**：未经 `build.py --test` 验证的修改不得提交；`.sh` 修改先 `bash -n`；完整 loong64 构建耗时长时，可只验证版本获取/模板渲染链路并在结果中如实说明
-- **autofix 不提交（2026-09 确认）**：自动模式只做分析+修复+验证，不执行 git add/commit/push，修复改动与维护记录回写保留在工作区；提交由人工审阅后通过 commit 子命令（或手动 git）执行
+- **autofix 不提交（2026-09 确认）**：自动模式只做分析+修复+验证，不执行 git add/commit/push，修复改动保留在工作区（会话报告落盘 `log/ai-ops/`，不入库）；提交由人工审阅后通过 commit 子命令（或手动 git）执行
 - **提交策略（手动流程，已确认）**：验证通过后直推本 fork 的 main 分支（与现有 build.yml 提交方式一致），不走 PR；push 前先 `git pull --rebase`（autofix 自动模式不在此列，见上一条）
 - **止损**：单个项目连续失败 N 次（建议 3，待定）转为交接人工，禁止无限重试
 - **凭据**：gh 凭据、registry 凭据仅用于采集与触发，日志中不得打印
@@ -172,7 +172,7 @@ Phase 3 前再定（当前不阻塞）：执行时点、通知渠道、修复确
 - ✅ autofix 提交边界：只分析+修复+验证，不提交不推送（`--push` 参数已移除）；`commit` 子命令（git add -A）保留，仅供人工审阅改动后的手动提交，与 §6「autofix 会话严禁 add -A」口径一致
 - ✅ `.gitignore` 已加入 `.ai-ops/` 与 `*.swp`
 - ✅ autofix 会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md`（不入库），脚本端在会话结束后写入，当日多次追加条目
-- ✅ 结构化知识沉淀改为脚本回写 `docs/ai-ops/ci-fix.md`（入库、跨项目累计、同 run 幂等）；autofix 会话**不再写任何项目的 AGENTS.md**（2026-09 确认——一次性会话写受保护文件会审批超时被拒，确定性回写归脚本）
+- ✅ 结构化知识沉淀改为脚本回写 `docs/ai-ops/ci-fix.md`（入库、跨项目累计、同 run 幂等）；autofix 会话**不再写任何项目的 AGENTS.md**（2026-09 确认——一次性会话写受保护文件会审批超时被拒，确定性回写归脚本）；**2026-09-09 反转：移除 write_ci_fix，不再自动回写 ci-fix.md**，ci-fix.md 保留为历史沉淀，新沉淀以 log/ai-ops/ 会话报告为准
 - ✅ `commit-pr` 子命令（2026-09-08 新增）：提交修改并发起 PR——只 `git add <project_dir>/`（不 add -A）→ `git commit -F log/ai-ops/{org}-{name}-{YYYYMMDD}-{run-id}-commit-msg.md` → `git push -u origin <当前分支>` → `gh pr create --base main`；`-n/--dry-run` 打印全部命令不执行；当前分支为 main 时拒绝执行；commit-msg 文件缺失时列出 log/ai-ops 候选文件并退出
 - 待观察：autofix 改动留工作区后，下一次 fetch/autofix 前需人工审阅并提交，否则新旧改动会混淆——可考虑后续在 cmd_autofix 入口加「工作区不干净则中止」检查（待讨论）
 
