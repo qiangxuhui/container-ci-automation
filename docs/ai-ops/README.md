@@ -175,6 +175,7 @@ Phase 3 前再定（当前不阻塞）：执行时点、通知渠道、修复确
 - ✅ 结构化知识沉淀改为脚本回写 `docs/ai-ops/ci-fix.md`（入库、跨项目累计、同 run 幂等）；autofix 会话**不再写任何项目的 AGENTS.md**（2026-09 确认——一次性会话写受保护文件会审批超时被拒，确定性回写归脚本）；**2026-09-09 反转：移除 write_ci_fix，不再自动回写 ci-fix.md**，ci-fix.md 保留为历史沉淀，新沉淀以 log/ai-ops/ 会话报告为准
 - ✅ `commit-pr` 子命令（2026-09-08 新增）：提交修改并发起 PR——只 `git add <project_dir>/`（不 add -A）→ `git commit -F log/ai-ops/{org}-{name}-{YYYYMMDD}-{run-id}-commit-msg.md` → `git push -u origin <当前分支>` → `gh pr create --base main`；`-n/--dry-run` 打印全部命令不执行；当前分支为 main 时拒绝执行；commit-msg 文件缺失时列出 log/ai-ops 候选文件并退出
 - ✅ branch 子命令重构（2026-09-10，重构版 tools/ai-ops-1.py）：分支名从状态文件 `.aiops-fix-info.json` 读取（fetch 写入的 `fix-{org}-{project}-{date}-{runid}`），不再接收 project_dir/jobid 位置参数；`-n/--dry-run` 打印 git 命令不执行；状态文件缺失时提示先 fetch 并退出
+- ✅ commit-msg 子命令重构（2026-09-10，重构版 tools/ai-ops-1.py 新增，原文件该子命令已于 e0de8ee 删除）：从 `.aiops-fix-info.json` 读项目上下文，基于 `log/ai-ops/{process-error-file}`（autofix 会话写入的报错原因+修复方法）调 hermes 一次性会话总结为 commit message（标题形如 `fix library/alpine: ...`），落盘 `log/ai-ops/{commit-msg-file}`（commit-pr 消费该文件）；`-n/--dry-run` 仅打印 hermes 命令；process-error 文件缺失时列出 log/ai-ops 候选并退出
 - 待观察：autofix 改动留工作区后，下一次 fetch/autofix 前需人工审阅并提交，否则新旧改动会混淆——可考虑后续在 cmd_autofix 入口加「工作区不干净则中止」检查（待讨论）
 
 ## 8. 证据附录（现状事实，2026-09 采集）

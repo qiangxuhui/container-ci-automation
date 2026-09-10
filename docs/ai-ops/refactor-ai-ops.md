@@ -1,7 +1,7 @@
 # tools/ai-ops.py 重构方案（目标：tools/ai-ops-1.py）
 
-> 日期：2026-09-08（v2：方案定案——JSON 状态文件设计，fetch 先行实现中；v3：2026-09-10 branch 落地）
-> 状态：**方案已定案，fetch/autofix/branch 已在 tools/ai-ops-1.py 落地**；其余子命令待后续迭代
+> 日期：2026-09-08（v2：方案定案——JSON 状态文件设计，fetch 先行实现中；v3：2026-09-10 branch 落地；v4：2026-09-10 commit-msg 落地）
+> 状态：**方案已定案，fetch/autofix/branch/commit-msg 已在 tools/ai-ops-1.py 落地**；其余子命令待后续迭代
 > 本文件是后续 agent 打开项目时了解该重构的**前置信息入口**：现状、动机、目标形态、兼容性清单、待确认项。
 
 ## 0. 前置信息（已确认事实）
@@ -10,7 +10,7 @@
 - **目标文件**：`tools/ai-ops-1.py`（2026-09-08 创建，已写入 fetch 实现，其余子命令未实现）
 - **原则**：不在原文件上直接重构；新文件单独演进；CLI 兼容（子命令名/参数/退出码语义不变）
 - **已定案设计**（2026-09-08 用户确认）：**状态文件 `.aiops-fix-info.json`**（仓库根、gitignore）：fetch 采集后写入本次修复上下文；后续操作（rerun/dispatch/branch/commit/commit-pr/autofix）一律从该文件读取信息，不再靠位置参数；每个操作支持 `--dry-run/-n` 输出全部将执行的 shell 命令
-- **已迭代范围**：fetch（2026-09-08）、autofix（2026-09-09）、branch（2026-09-10）已移植；其余命令逻辑不变、留待后续迭代
+- **已迭代范围**：fetch（2026-09-08）、autofix（2026-09-09）、branch（2026-09-10）、commit-msg（2026-09-10）已移植；其余命令逻辑不变、留待后续迭代
 
 ## 1. 现状结构（原 tools/ai-ops.py）
 
@@ -83,11 +83,18 @@
 - `--dry-run/-n`：打印 gh run list / gh run view 两条命令（run view 的 run-id 未指定时为 `<run-id>` 占位）及将写入的文件说明；不执行任何命令、不写文件
 - 参数：`fetch <project_dir> [--since-hours N] [--limit N] [--run-id ID] [--out DIR] [--dry-run/-n]`
 
-### 4.3 后续命令（已落地：branch 2026-09-10；剩余 rerun/dispatch/commit/commit-pr 待迭代）
+### 4.3 后续命令（已落地：branch 2026-09-10、commit-msg 2026-09-10；剩余 rerun/dispatch/commit/commit-pr 待迭代）
 
 - 已落地的 branch：从 `.aiops-fix-info.json` 读 `branch` 字段（fetch 写入时按
   `fix-{org}-{project}-{date}-{runid}` 生成），`git checkout -b <branch>` 仅本地不推送；支持 `--dry-run/-n`；
   状态文件缺失时 load_fix_info 提示先 fetch 并 exit 1（与 autofix 一致）
+- 已落地的 commit-msg（重构版新增子命令，原文件该子命令已于 e0de8ee 删除）：从
+  `.aiops-fix-info.json` 读 org/project/process-error-file/commit-msg-file；输入 =
+  `log/ai-ops/{process-error-file}`（autofix 会话中 agent 写入的报错原因+修复方法），
+  调 hermes 一次性会话总结为 commit message（标题形如 `fix library/alpine: ...`），
+  落盘 `log/ai-ops/{commit-msg-file}`；process-error 文件缺失时列出 log/ai-ops 候选并
+  exit 1；`--max-turns`(60)/`--timeout`(600)/`--dry-run/-n`；hermes 超时 exit 1、
+  非零退出仍落盘、无输出不落盘 return 1、已存在覆盖
 - 剩余命令（rerun/dispatch/commit/commit-pr）均改为：**从 `.aiops-fix-info.json` 读 org/project/runid/date/文件路径**，不再接收 project_dir/run_id 位置参数（autofix 的 --version 改为可选且允许为空：缺省取状态文件 versions 首个版本，versions 为空则默认空字符串）
 - 全部支持 `--dry-run/-n`
 - 读取时文件缺失 → 明确报错提示先执行 fetch
@@ -131,5 +138,5 @@
 - 主要函数行数与行号区间（原文件实测）：
   - `main` 54 行（453-507）；`cmd_autofix` 67 行（384-450）；`collect_failed_runs` 55 行（75-129）；`cmd_commit_pr` 52 行（330-381）；`write_autofix_log` 41 行（159-199）；`write_ci_fix` 39 行（202-240）；`build_autofix_prompt` 25 行（132-156）；`find_commit_msg_file` 15 行（313-327）
 - 调用关系：cmd_fetch/cmd_autofix 共用 collect_failed_runs；cmd_autofix 独占 build_autofix_prompt/write_autofix_log/write_ci_fix/extract_session_id；cmd_commit_pr 独占 find_commit_msg_file
-- 重构版 tools/ai-ops-1.py 当前实现（2026-09-10）：常量（FAIL_CONCLUSIONS、REPO_ROOT、LOG_DIR、FIX_INFO_FILE）+ log/run/project_info/build_fix_info/extract_versions_from_title/collect_failed_runs/fetch_run_log/write_fix_info/load_fix_info/entry_from_fix_info/build_autofix_prompt/write_autofix_log/extract_session_id + cmd_fetch / cmd_branch / cmd_autofix + main（注册 fetch/branch/autofix）；date 字段取 fetch 执行当天（datetime.now()，本地时区）；branch 分支名 = 状态文件 branch 字段（fix-{org}-{project}-{date}-{runid}）
+- 重构版 tools/ai-ops-1.py 当前实现（2026-09-10）：常量（FAIL_CONCLUSIONS、REPO_ROOT、LOG_DIR、FIX_INFO_FILE）+ log/run/project_info/build_fix_info/extract_versions_from_title/collect_failed_runs/fetch_run_log/write_fix_info/load_fix_info/entry_from_fix_info/build_autofix_prompt/write_autofix_log/extract_session_id/build_commit_msg_prompt + cmd_fetch / cmd_branch / cmd_autofix / cmd_commit_msg + main（注册 fetch/branch/autofix/commit-msg）；date 字段取 fetch 执行当天（datetime.now()，本地时区）；branch 分支名 = 状态文件 branch 字段（fix-{org}-{project}-{date}-{runid}）；commit-msg 输入/输出 = 状态文件 process-error-file / commit-msg-file（拼 log/ai-ops/）
 - 文档挂接点：AGENTS.md 当前进度行与文档索引表、docs/ai-ops/README.md 文档位置行均已有本文件入口

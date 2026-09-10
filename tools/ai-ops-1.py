@@ -9,9 +9,9 @@
   不再靠位置参数传递
 - 每个子命令支持 --dry-run/-n：打印全部将执行的 shell 命令，不执行、不写文件
 
-当前实现：fetch、autofix、branch（autofix/branch 均从状态文件
-.aiops-fix-info.json 读取 run 上下文/分支名，不再靠位置参数；其余子命令逻辑
-保留在 tools/ai-ops.py，待后续迭代移植）。
+当前实现：fetch、autofix、branch、commit-msg（autofix/branch/commit-msg 均从状态
+文件 .aiops-fix-info.json 读取 run 上下文/分支名/文件路径，不再靠位置参数；
+其余子命令逻辑保留在 tools/ai-ops.py，待后续迭代移植）。
 """
 
 import argparse
@@ -394,6 +394,79 @@ def cmd_autofix(args):
     return 0 if r.returncode == 0 else 1
 
 
+def build_commit_msg_prompt(project, doc_path):
+    """构造让 hermes chat 把修复过程记录总结为 commit message 的一次性 prompt。
+
+    输入是 process-error-file 对应文件（log/ai-ops/{process-error-file}，autofix
+    会话中 agent 写入的报错原因 + 修复方法）；输出标题形如
+    `fix library/alpine: ...` 的 commit message（首行标题 + 空行 + 正文）。
+    """
+    return f"""你是 container-ci-automation 仓库的 AI 运维助手，任务是把一次修复闭环的过程记录总结成 git commit message。
+
+读取修复过程记录：{doc_path}
+
+该文档记录了 {project} 项目某次 CI 失败修复闭环的过程（含错误原因、修复方法、验证结果），是本次要总结的修复内容。
+
+输出格式（只输出 commit message 本身，不要任何前后缀说明或代码块围栏）：
+1. 第一行为标题，形如：fix library/alpine: <一句话概括本次修复>
+2. 空一行
+3. 正文（commit body）：用简洁中文条目提炼 错误原因 / 修复方法 / 验证结果，3-8 行为宜"""
+
+
+def cmd_commit_msg(args):
+    """从状态文件取项目上下文，把修复过程记录（process-error-file）总结为 commit message。
+
+    输入 = log/ai-ops/{process-error-file}（autofix 会话中 agent 写入的报错原因
+    + 修复方法）；调 hermes 一次性会话总结，输出标题形如 `fix library/alpine: ...`
+    的 commit message，落盘 log/ai-ops/{commit-msg-file}（均不入库）。
+    流程节奏：fetch → autofix →（人工审阅）commit-msg → commit-pr。
+    """
+    info = load_fix_info()
+    project = f"{info['org']}/{info['project']}"
+    doc = LOG_DIR / info["process-error-file"]
+    out = LOG_DIR / info["commit-msg-file"]
+    if not doc.exists():
+        log(f"找不到修复过程记录 {doc}（{project} 需先跑 autofix 生成 process-error 文件）")
+        cands = sorted(LOG_DIR.glob(f"{info['org']}-{info['project']}-*"))
+        if cands:
+            log("log/ai-ops/ 下相关文件：")
+            for c in cands:
+                log(f"  {c.name}")
+        sys.exit(1)
+
+    prompt = build_commit_msg_prompt(project, doc)
+    cmdv = ["hermes", "chat", "-q", prompt, "-Q",
+            "--in", str(REPO_ROOT), "--yolo",
+            "--max-turns", str(args.max_turns),
+            "-t", "file,terminal"]
+    if args.dry_run:
+        # 仅打印实际将执行的 hermes 命令（含完整 prompt），不执行、不写文件
+        print(shlex.join(cmdv))
+        log(f"dry-run：仅打印上述命令，未执行（读 {doc.name}，写 {out.name}）")
+        return 0
+    log(f"调用 hermes chat 总结 commit message（读 {doc.name}）...")
+    try:
+        r = subprocess.run(cmdv, capture_output=True, text=True, timeout=args.timeout)
+    except subprocess.TimeoutExpired:
+        log(f"hermes 会话超时（>{args.timeout}s）。可调大 --timeout 重试。")
+        sys.exit(1)
+    print(r.stdout)
+    if r.returncode != 0:
+        log(f"hermes 退出码 {r.returncode}，仍将 stdout 落盘供人工参考")
+        if r.stderr.strip():
+            log("stderr 片段: " + r.stderr.strip()[:1000])
+    msg = (r.stdout or "").strip()
+    if not msg:
+        log("hermes 无输出，未生成 commit-msg 文件")
+        return 1
+    if out.exists():
+        log(f"目标文件已存在，覆盖：{out}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(msg + "\n", encoding="utf-8")
+    log(f"commit message 已写入 {out}")
+    return 0 if r.returncode == 0 else 1
+
+
 def main():
     p = argparse.ArgumentParser(
         description="AI 运维工具（重构版）：状态文件 .aiops-fix-info.json，fetch 先行")
@@ -433,6 +506,18 @@ def main():
                     help="仅打印将执行的 hermes 命令，不执行、不写文件"
                          "（上下文已由 fetch 写入状态文件，无需先采集）")
     pa.set_defaults(fn=cmd_autofix)
+
+    pc = sub.add_parser(
+        "commit-msg",
+        help="从状态文件取项目上下文，把修复过程记录（process-error-file）总结为"
+             " commit message（hermes 一次性会话），落盘 commit-msg-file")
+    pc.add_argument("--max-turns", type=int, default=60,
+                    help="hermes 会话最大轮数，默认 60")
+    pc.add_argument("--timeout", type=int, default=600,
+                    help="hermes 会话超时（秒），默认 600")
+    pc.add_argument("--dry-run", "-n", action="store_true",
+                    help="仅打印将执行的 hermes 命令，不执行、不写文件")
+    pc.set_defaults(fn=cmd_commit_msg)
 
     args = p.parse_args()
     sys.exit(args.fn(args))
