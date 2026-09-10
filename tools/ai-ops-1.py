@@ -9,8 +9,9 @@
   不再靠位置参数传递
 - 每个子命令支持 --dry-run/-n：打印全部将执行的 shell 命令，不执行、不写文件
 
-当前实现：fetch、autofix（autofix 从状态文件读取 run 上下文，不再自行采集；
-其余子命令逻辑保留在 tools/ai-ops.py，待后续迭代移植）。
+当前实现：fetch、autofix、branch（autofix/branch 均从状态文件
+.aiops-fix-info.json 读取 run 上下文/分支名，不再靠位置参数；其余子命令逻辑
+保留在 tools/ai-ops.py，待后续迭代移植）。
 """
 
 import argparse
@@ -304,6 +305,26 @@ def cmd_fetch(args):
     return 0
 
 
+def cmd_branch(args):
+    """从状态文件取分支名，基于当前 HEAD 创建并切换修复分支（仅本地，不推送）。
+
+    分支名 = 状态文件 .aiops-fix-info.json 的 branch 字段（fetch 写入时按
+    fix-{org}-{project}-{date}-{runid} 生成，如 fix-library-alpine-20260908-34050474275）；
+    状态文件缺失/损坏时 load_fix_info 提示先 fetch 并退出。先 fetch 再 branch。
+    """
+    info = load_fix_info()
+    branch = info["branch"]
+    cmdv = ["git", "checkout", "-b", branch]
+    if args.dry_run:
+        # 仅打印实际将执行的 git 命令，不执行（与 autofix --dry-run 语义一致）
+        print(shlex.join(cmdv))
+        log(f"dry-run：仅打印上述命令，未执行（分支 {branch}）")
+        return 0
+    run(cmdv)
+    log(f"已创建并切换到分支 {branch}")
+    return 0
+
+
 def cmd_autofix(args):
     """从状态文件取失败 run，调 hermes 分析日志→修复→验证（不提交、不推送）。
 
@@ -389,6 +410,14 @@ def main():
     pf.add_argument("--dry-run", "-n", action="store_true",
                     help="仅打印将执行的 gh 命令，不执行、不写文件")
     pf.set_defaults(fn=cmd_fetch)
+
+    pb = sub.add_parser(
+        "branch",
+        help="从状态文件取分支名，基于当前 HEAD 创建修复分支 fix-{org}-{project}-{date}-{runid}"
+             "（仅本地，不推送）")
+    pb.add_argument("--dry-run", "-n", action="store_true",
+                    help="仅打印将执行的 git 命令，不执行")
+    pb.set_defaults(fn=cmd_branch)
 
     pa = sub.add_parser(
         "autofix",

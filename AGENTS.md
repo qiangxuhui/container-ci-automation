@@ -21,7 +21,7 @@
 **开发计划**：`docs/ai-ops/README.md`（决策记录、三阶段计划、待确认项清单）。
 **修复执行手册**：`docs/ai-ops/runbook.md`（Hermes 会话 / autofix 按此执行闭环）。
 
-**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/branch/commit-pr/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环；**tools/ai-ops.py 重构进行中**：目标文件 tools/ai-ops-1.py（已建空文件未写内容，方案见 docs/ai-ops/refactor-ai-ops.md，重构期间勿再直接改 tools/ai-ops.py）。
+**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/branch/commit-pr/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环；**tools/ai-ops.py 重构进行中**：目标文件 tools/ai-ops-1.py（fetch/autofix/branch 已落地：均从状态文件 .aiops-fix-info.json 读取 run 上下文/分支名，方案见 docs/ai-ops/refactor-ai-ops.md，重构期间勿再直接改 tools/ai-ops.py）。
 
 ## 核心工具
 
