@@ -9,8 +9,8 @@
   不再靠位置参数传递
 - 每个子命令支持 --dry-run/-n：打印全部将执行的 shell 命令，不执行、不写文件
 
-当前实现：fetch、autofix、branch、commit-msg（autofix/branch/commit-msg 均从状态
-文件 .aiops-fix-info.json 读取 run 上下文/分支名/文件路径，不再靠位置参数；
+当前实现：fetch、autofix、branch、commit-msg、commit-pr（均从状态文件
+.aiops-fix-info.json 读取 run 上下文/分支名/文件路径，不再靠位置参数；
 其余子命令逻辑保留在 tools/ai-ops.py，待后续迭代移植）。
 """
 
@@ -467,6 +467,87 @@ def cmd_commit_msg(args):
     return 0 if r.returncode == 0 else 1
 
 
+def cmd_commit_pr(args):
+    """提交修改并发起 PR（重构版：信息全部来自状态文件 .aiops-fix-info.json）。
+
+    流程（--dry-run/-n 打印全部命令但均不执行）：
+      1. 从状态文件读 org/project/branch/commit-msg-file
+         （commit-msg-file = log/ai-ops/{...}-commit-msg.md，由 commit-msg 子命令
+         调用 hermes 总结 autofix 修复过程生成，首行标题、第 3 行起为正文）
+      2. git add {org}/{project}/（只加项目目录，不用 git add -A，不卷入无关改动）
+      3. git commit -F <commit-msg 文件>
+      4. git push -u origin <branch>（branch 取自状态文件，与 branch 子命令一致）
+      5. gh pr create --base main --head <branch>（标题/正文取自 commit-msg 文件）
+    安全约束（任一不满足即 exit 1）：
+      - commit-msg 文件缺失：提示先跑 commit-msg 子命令，并列出 log/ai-ops 候选文件
+      - 状态文件缺 branch 字段：提示重新 fetch
+      - 当前分支为 main/master：拒绝执行（PR 须从修复分支发起）
+      - 当前分支与状态文件 branch 不一致：拒绝执行（提示先跑 branch 子命令）
+    dry-run 说明：仅打印 git/gh 命令，不执行、不写文件；**跳过全部分支校验**
+    （故可在 main/master 上直接预览），仍会先校验 commit-msg 文件存在。
+    """
+    info = load_fix_info()
+    project = f"{info['org']}/{info['project']}"
+    msg_file = LOG_DIR / info["commit-msg-file"]
+    if not msg_file.exists():
+        log(f"找不到 commit-msg 文件 {msg_file}（{project} 需先跑 commit-msg 子命令生成）")
+        cands = sorted(LOG_DIR.glob(f"{info['org']}-{info['project']}-*"))
+        if cands:
+            log("log/ai-ops/ 下相关文件：")
+            for c in cands:
+                log(f"  {c.name}")
+        sys.exit(1)
+
+    lines = msg_file.read_text(encoding="utf-8").splitlines()
+    title = lines[0].strip() if lines else f"fix {project}"
+    body = "\n".join(lines[2:]).strip()
+
+    branch = info.get("branch", "")
+    if not branch:
+        log(f"状态文件 {FIX_INFO_FILE.name} 缺少 branch 字段，请重新 fetch（或先跑 branch）")
+        sys.exit(1)
+    if not args.dry_run:
+        # 分支校验仅在真实执行时进行：dry-run 允许在 main/master 上预览命令
+        current = run(["git", "branch", "--show-current"])
+        if current in ("main", "master"):
+            log(f"当前分支是 {current}，拒绝执行：请先跑 branch 子命令（{branch}）从修复分支发起 PR")
+            sys.exit(1)
+        if current != branch:
+            log(f"当前分支是 {current}，与状态文件 branch（{branch}）不一致，"
+                f"拒绝执行：请先跑 branch 子命令切换到修复分支")
+            sys.exit(1)
+
+    cmdv = [
+        ["git", "add", f"{project}/"],
+        ["git", "commit", "-F", str(msg_file)],
+        ["git", "push", "-u", "origin", branch],
+        ["gh", "pr", "create", "--base", "main", "--head", branch,
+         "--title", title, "--body", body],
+    ]
+    if args.dry_run:
+        for c in cmdv:
+            print(shlex.join(c))
+        log(f"dry-run：仅打印上述命令，未执行（commit-msg={msg_file}，分支 {branch}；"
+            f"跳过分支校验，可在 main/master 上预览）")
+        return 0
+
+    stat = subprocess.run(["git", "status", "--porcelain", "--", f"{project}/"],
+                          capture_output=True, text=True)
+    if not stat.stdout.strip():
+        log(f"{project}/ 无改动可提交")
+        return 0
+
+    run(cmdv[0])
+    run(cmdv[1])
+    h = run(["git", "rev-parse", "--short", "HEAD"])
+    log(f"已提交 {h}（仅 {project}/，消息来自 {msg_file.name}）")
+    run(cmdv[2])
+    log(f"已推送分支 {branch}（origin）")
+    out = run(cmdv[3])
+    log(out or f"已发起 PR: {branch} → main")
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(
         description="AI 运维工具（重构版）：状态文件 .aiops-fix-info.json，fetch 先行")
@@ -518,6 +599,15 @@ def main():
     pc.add_argument("--dry-run", "-n", action="store_true",
                     help="仅打印将执行的 hermes 命令，不执行、不写文件")
     pc.set_defaults(fn=cmd_commit_msg)
+
+    pp = sub.add_parser(
+        "commit-pr",
+        help="从状态文件取分支名与 commit-msg 文件，提交并发起 PR："
+             "add 项目目录 → commit -F commit-msg-file → push → gh pr create")
+    pp.add_argument("--dry-run", "-n", action="store_true",
+                    help="仅打印将执行的 git/gh 命令，不执行"
+                         "（跳过分支校验，可在 main/master 上预览）")
+    pp.set_defaults(fn=cmd_commit_pr)
 
     args = p.parse_args()
     sys.exit(args.fn(args))

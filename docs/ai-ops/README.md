@@ -65,7 +65,7 @@
 | 项目 workflow | `.github/workflows/library-*.yml`（试点期仅 alpine 接通 schedule；终态每项目 1 个+每日定时） | 触发构建 |
 | 构建 workflow | `.github/workflows/build.yml`（workflow_call 可复用） | checkout → build.py --push → 提交版本跟踪 |
 | 统一入口 | `tools/build.py` | 获取版本 → update.sh → apply-templates.sh → buildx 构建；`--test` 本地验证不推送 |
-| AI 运维工具 | `tools/ai-ops.py` | 确定性动作：fetch（采集失败 run+日志）/ rerun / dispatch / commit / branch（从 `.aiops-fix-info.json` 读分支名创建修复分支，重构版 tools/ai-ops-1.py）/ commit-pr（提交修改并发起 PR：只 add 项目目录 → commit -F commit-msg → push → gh pr create）；autofix 组装上下文并调用 hermes 一次性会话完成分析→修复→验证，会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md` |
+| AI 运维工具 | `tools/ai-ops.py` | 确定性动作：fetch（采集失败 run+日志）/ rerun / dispatch / commit / branch（从 `.aiops-fix-info.json` 读分支名创建修复分支，重构版 tools/ai-ops-1.py）/ commit-pr（从 `.aiops-fix-info.json` 读分支名与 commit-msg 文件，提交修改并发起 PR：只 add 项目目录 → commit -F commit-msg → push → gh pr create，重构版 tools/ai-ops-1.py）；autofix 组装上下文并调用 hermes 一次性会话完成分析→修复→验证，会话报告（错误原因+修复过程）自动落盘 `log/ai-ops/{date}-{project}.md` |
 | 项目上下文 | `library/<project>/AGENTS.md` | 上游映射、本地调整、已知问题、维护记录 —— AI 修复的决策依据（规范见 docs/07-agents-md.md） |
 | 修复执行手册 | `docs/ai-ops/runbook.md` | Hermes agent / autofix 会话按此执行「采集→分析→修复→验证→直推→重跑→回写」闭环 |
 | 迁移规范 | `docs/08-migration-experience.md` | 修复模板/脚本时必须遵循的规则（FROM 不加 registry、变体命名、forky 约束等） |
@@ -176,6 +176,7 @@ Phase 3 前再定（当前不阻塞）：执行时点、通知渠道、修复确
 - ✅ `commit-pr` 子命令（2026-09-08 新增）：提交修改并发起 PR——只 `git add <project_dir>/`（不 add -A）→ `git commit -F log/ai-ops/{org}-{name}-{YYYYMMDD}-{run-id}-commit-msg.md` → `git push -u origin <当前分支>` → `gh pr create --base main`；`-n/--dry-run` 打印全部命令不执行；当前分支为 main 时拒绝执行；commit-msg 文件缺失时列出 log/ai-ops 候选文件并退出
 - ✅ branch 子命令重构（2026-09-10，重构版 tools/ai-ops-1.py）：分支名从状态文件 `.aiops-fix-info.json` 读取（fetch 写入的 `fix-{org}-{project}-{date}-{runid}`），不再接收 project_dir/jobid 位置参数；`-n/--dry-run` 打印 git 命令不执行；状态文件缺失时提示先 fetch 并退出
 - ✅ commit-msg 子命令重构（2026-09-10，重构版 tools/ai-ops-1.py 新增，原文件该子命令已于 e0de8ee 删除）：从 `.aiops-fix-info.json` 读项目上下文，基于 `log/ai-ops/{process-error-file}`（autofix 会话写入的报错原因+修复方法）调 hermes 一次性会话总结为 commit message（标题形如 `fix library/alpine: ...`），落盘 `log/ai-ops/{commit-msg-file}`（commit-pr 消费该文件）；`-n/--dry-run` 仅打印 hermes 命令；process-error 文件缺失时列出 log/ai-ops 候选并退出
+- ✅ commit-pr 子命令重构（2026-09-10，重构版 tools/ai-ops-1.py）：信息全部取自 `.aiops-fix-info.json`（org/project/branch/commit-msg-file），不再接收 project_dir/run_id 位置参数、不再用通配符搜索 commit-msg 文件（原 find_commit_msg_file 不移植）；commit-msg 文件 = `log/ai-ops/{commit-msg-file}`（首行标题、第 3 行起正文）；安全约束：commit-msg 文件缺失 → 列出 log/ai-ops 候选并退出、状态文件缺 branch → 退出、当前分支为 main/master → 拒绝、当前分支 ≠ 状态文件 branch → 拒绝（提示先跑 branch）；`-n/--dry-run` 仅打印 4 条 git/gh 命令，且跳过全部分支校验（可在 main/master 上直接预览）
 - 待观察：autofix 改动留工作区后，下一次 fetch/autofix 前需人工审阅并提交，否则新旧改动会混淆——可考虑后续在 cmd_autofix 入口加「工作区不干净则中止」检查（待讨论）
 
 ## 8. 证据附录（现状事实，2026-09 采集）
