@@ -4,7 +4,7 @@
 设计（2026-09-08 定案，详见 docs/ai-ops/refactor-ai-ops.md）：
 - 状态文件 .aiops-fix-info.json（仓库根，.gitignore）：fetch 采集后写入本次
   修复上下文（org/project/runid/url/conclusion/created_at/event/log-file/date/
-  branch/process-error-file/commit-msg-file/versions）；后续命令
+  branch/process-error-file/session-log-file/commit-msg-file/versions）；后续命令
   （rerun/dispatch/branch/commit/commit-pr/autofix，待迭代）一律从该文件读取，
   不再靠位置参数传递
 - 每个子命令支持 --dry-run/-n：打印全部将执行的 shell 命令，不执行、不写文件
@@ -84,6 +84,10 @@ def build_fix_info(org, name, entry, versions):
     追加字段（2026-09-09 autofix 迭代）：conclusion/created_at/event/log-file——
     供 autofix 构造会话日志（write_autofix_log）使用，避免再次调用 gh；
     旧状态文件缺这些字段时 autofix 以默认值兜底。
+    追加字段（2026-09-11）：session-log-file——autofix 会话记录（错误原因 +
+    修复过程，write_autofix_log 写入）的落盘文件名，取代原
+    log/ai-ops/{date}-{project}.md；命名带 process-error 前缀，便于与
+    process-error/commit-msg 文件成组识别。
     """
     # date 取 fetch 执行当天的日期（本地时区），不随 run 创建时间
     date = datetime.now().strftime("%Y%m%d")
@@ -101,6 +105,7 @@ def build_fix_info(org, name, entry, versions):
         "date": date,
         "branch": f"fix-{prefix}",
         "process-error-file": f"{prefix}-process-error.md",
+        "session-log-file": f"{prefix}-process-error-session-log.log",
         "commit-msg-file": f"{prefix}-commit-msg.md",
         "versions": versions,
     }
@@ -219,18 +224,21 @@ def build_autofix_prompt(project, url, version, process_error_file):
     3. 在修复成功后，需要再 log/ai-ops/{process_error_file} 中记录此次报错的原因和修复方法"""
 
 
-def write_autofix_log(project_dir, entry, report, rc=0, session_id=None):
-    """把一次 autofix 会话记录（错误原因 + 修复过程）追加到 log/ai-ops/{date}-{project}.md。
+def write_autofix_log(info, entry, report, rc=0, session_id=None):
+    """把一次 autofix 会话记录（错误原因 + 修复过程）写入 log/ai-ops/{session-log-file}。
 
-    - {date} 为执行日（本地时区 YYYY-MM-DD），{project} 为项目名（如 alpine）
-    - 当日多次执行同一项目时按条目追加（## 时间戳 — run #id 分段）
+    - 目标文件 = 状态文件 session-log-file 字段
+      （{org}-{project}-{date}-{runid}-process-error-session-log.log）；旧状态文件
+      缺该字段时按 process-error-file 前缀兜底（见 session_log_name）。
+      2026-09-11 起取代原 log/ai-ops/{date}-{project}.md（按 run 落盘，不再按日聚合）
+    - 同一 run 重复 autofix 时在同一文件内按条目追加（## HH:MM — run #id 分段）
     - 文件不入库（.gitignore 的 log/ai-ops/），本地可追溯；
       不再自动回写 docs/ai-ops/ci-fix.md（2026-09-09 起移除 write_ci_fix）
     """
-    org, name = project_info(project_dir)
+    org, name = info["org"], info["project"]
     today = datetime.now().strftime("%Y-%m-%d")
     ts = datetime.now().strftime("%H:%M")
-    log_file = LOG_DIR / f"{today}-{name}.md"
+    log_file = LOG_DIR / session_log_name(info)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     report = (report or "").strip() or f"（hermes 无输出，退出码 {rc}）"
@@ -273,6 +281,32 @@ def extract_session_id(stderr):
     return None
 
 
+def decode_stream(stream):
+    """TimeoutExpired 携带的部分输出可能是 bytes（即使 text=True），统一转 str。
+
+    超时路径用它从被 kill 的 hermes 进程的部分 stderr 里捞 session_id
+    （仅用于会话记录里的 `hermes chat --resume <id>` 提示）。
+    """
+    if stream is None:
+        return ""
+    return (stream.decode("utf-8", errors="replace")
+            if isinstance(stream, bytes) else stream)
+
+
+def session_log_name(info):
+    """会话日志（autofix 会话记录）文件名：取状态文件 session-log-file。
+
+    旧状态文件（2026-09-11 之前 fetch 写入）没有 session-log-file 字段，此时以
+    process-error-file 去掉 .md 后缀 + `-session-log.log` 兜底
+    （如 library-alpine-20260908-34050474275-process-error-session-log.log）。
+    """
+    name = info.get("session-log-file")
+    if name:
+        return name
+    stem = Path(info.get("process-error-file") or "session").stem
+    return f"{stem}-session-log.log"
+
+
 def cmd_fetch(args):
     org, name = project_info(args.project_dir)
     workflow_file = f"library-{name}.yml"
@@ -293,7 +327,7 @@ def cmd_fetch(args):
         print(f"# 失败时回退: {shlex.join(['gh', 'run', 'view', runid_placeholder, '--log'])}")
         print(f"# 将把选中失败 run 的信息写入 {FIX_INFO_FILE.name}："
               f"org/project/runid/url/conclusion/created_at/event/log-file/date/"
-              f"branch/process-error-file/commit-msg-file/versions")
+              f"branch/process-error-file/session-log-file/commit-msg-file/versions")
         log(f"dry-run：仅打印上述命令，未执行（项目 {org}/{name}）")
         return 0
 
@@ -355,6 +389,10 @@ def cmd_autofix(args):
     --since-hours 等采集参数——run 上下文（org/project/runid/url/log 路径等）
     一律从 .aiops-fix-info.json 读取（先 fetch 再 autofix）；--version 可选且允许
     为空（缺省取状态文件 versions 首个版本；versions 为空则默认空字符串）。
+
+    会话日志（2026-09-11 追加）：会话结束后把会话记录（错误原因 + 修复过程）写入
+    log/ai-ops/{session-log-file}（状态文件字段），见 write_autofix_log；超时
+    路径同样落盘（rc=124），并从部分 stderr 尽力取出 session_id 供 --resume。
     """
     info = load_fix_info()
     project = f"{info['org']}/{info['project']}"
@@ -390,10 +428,12 @@ def cmd_autofix(args):
     log("调用 hermes chat -q（一次性会话，典型耗时 1-10 分钟）...")
     try:
         r = subprocess.run(cmdv, capture_output=True, text=True, timeout=args.timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         log(f"hermes 会话超时（>{args.timeout}s）。可调大 --timeout 重试，或重新 fetch 后手动修复。")
-        log_file = write_autofix_log(project, entry, "", rc=124,
-                                     session_id="超时，无会话 id")
+        # 被 kill 的 hermes 进程的部分 stderr 里可能已有 session_id 行，尽力取出供 --resume
+        sid = extract_session_id(decode_stream(getattr(e, "stderr", None)))
+        log_file = write_autofix_log(info, entry, "", rc=124,
+                                     session_id=sid or "超时，无会话 id")
         log(f"超时已记录到 {log_file}")
         sys.exit(1)
     print(r.stdout)
@@ -402,9 +442,9 @@ def cmd_autofix(args):
         if r.stderr.strip():
             log("stderr 片段: " + r.stderr.strip()[:1000])
 
-    # 落盘会话记录（错误原因 + 修复过程）→ log/ai-ops/{date}-{project}.md
+    # 落盘会话记录（错误原因 + 修复过程）→ log/ai-ops/{session-log-file}
     sid = extract_session_id(r.stderr)
-    log_file = write_autofix_log(project, entry, r.stdout, rc=r.returncode, session_id=sid)
+    log_file = write_autofix_log(info, entry, r.stdout, rc=r.returncode, session_id=sid)
     log(f"autofix 会话已记录到 {log_file}")
 
     head_after = run(["git", "rev-parse", "--short", "HEAD"])

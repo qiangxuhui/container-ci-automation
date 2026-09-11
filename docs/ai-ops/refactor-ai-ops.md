@@ -61,6 +61,7 @@
   "date": "20260908",
   "branch": "fix-library-alpine-20260908-34050474275",
   "process-error-file": "library-alpine-20260908-34050474275-process-error.md",
+  "session-log-file": "library-alpine-20260908-34050474275-process-error-session-log.log",
   "commit-msg-file": "library-alpine-20260908-34050474275-commit-msg.md",
   "versions": ["3.21.3"]
 }
@@ -72,6 +73,7 @@
 - date：fetch 执行当天日期 YYYYMMDD（本地时区 datetime.now()，不随 run 创建时间；commit-msg/process-error 文件名与 branch 的日期段即此日期）
 - branch：`fix-{org}-{project}-{date}-{runid}`（后续 branch 子命令使用，仅本地/推送用）
 - process-error-file / commit-msg-file：文件名（使用时拼 LOG_DIR=log/ai-ops/）；autofix 提示词要求 agent 把报错原因+修复方法写入 process-error-file 对应文件，commit-msg-file 对应 commit message
+- session-log-file（2026-09-11 追加）：autofix 会话记录的落盘文件名 `{org}-{project}-{date}-{runid}-process-error-session-log.log`（带 process-error 前缀，便于与 process-error/commit-msg 成组识别）；**= write_autofix_log 的目标文件**（拼 LOG_DIR），取代原 `log/ai-ops/{date}-{project}.md`（改为按 run 落盘，不再按日聚合；同一 run 重复 autofix 在同一文件内追加条目）；旧状态文件缺该字段时按 process-error-file 前缀兜底推导（session_log_name）
 - versions：本次修复涉及的版本号（从 run 标题提取 x.y.z，提取不到为 []）
 - 追加字段（如需）：由后续迭代决定，保持本结构即可
 
@@ -114,12 +116,13 @@
 
 - **fetch**：FAIL_CONCLUSIONS={failure, cancelled, timed_out, startup_failure}；时间窗过滤比较 createdAt（UTC ISO）；`gh run list --workflow library-{name}.yml --branch main --status completed`；`gh run view --log-failed` 失败回退 `--log`；日志落盘父目录自动创建；提示走 stderr、数据走 stdout
 - **autofix**（原逻辑，迭代时保留）：--version 可选且允许为空（缺省取状态文件 versions 首个版本；versions 为空则默认空字符串；不做自动探测）；--run-id 不在失败列表时列出候选并 exit 1；默认取最新失败；hermes 命令形如 `hermes chat -q <prompt> -Q --in <REPO_ROOT> --yolo --max-turns N`；超时 TimeoutExpired → rc=124 落盘并 exit 1；会话后 HEAD 比对，有新提交则告警；--dry-run 仍先采集 run 再只打印命令
+- **autofix 会话记录落盘（✅ 2026-09-11 改造）**：会话结束后 `write_autofix_log(info, entry, r.stdout, rc, session_id)` 写入 `log/ai-ops/{session-log-file}`（状态文件字段；旧状态文件按 process-error-file 前缀兜底，见 `session_log_name`），**取代原 `log/ai-ops/{date}-{project}.md`**（从「按日聚合」改为「按 run 落盘」，同一 run 重复执行在同一文件内追加条目）；条目含 run 元数据 + `hermes chat --resume <id>`（sid 取 `hermes chat -Q` stderr 的 `session_id:` 行）+ 错误原因与修复过程正文；超时路径同样落盘（rc=124），并用 `decode_stream` 从 TimeoutExpired 携带的部分 stderr（bytes）里尽力取 sid
 - **commit-pr**（✅ 已移植 2026-09-10，路径不再通配搜索）：commit-msg 文件路径直接取状态文件 `commit-msg-file`（缺失时列出 log/ai-ops 候选并 exit 1）；branch 取状态文件 `branch` 字段，与当前分支不一致或当前为 main/master 均拒绝（**该分支校验仅真实执行时进行**）；仅 `git add {org}/{project}/`；`{project}/` 无改动时提示并返回 0；dry-run 打印全部 4 条命令不执行，且跳过分支校验（可在 main/master 上预览）
 - **branch**（✅ 已移植 2026-09-10）：分支名改为 `fix-{org}-{project}-{date}-{runid}`（随状态文件）；dry-run 仅打印
 - **dispatch**：version 通过 `-f version=` 传入；留空为自动检测；workflow 文件名 `library-{name}.yml`
 - **commit**：无改动时提示并返回 0；`git add -A`（仅人工手动提交路径使用）
 - **write_ci_fix 幂等**：ci-fix.md 已含 `| {runid} |` 时跳过；报告里 CI-FIX-ROOTCAUSE/CI-FIX-FIX 标记提取，缺失回退占位文案
-- **write_autofix_log 追加语义**：当日多次执行按 `## HH:MM — run #id` 追加分段；文件不存在/空时先写标题与提示头
+- **write_autofix_log 追加语义**：目标文件 = 状态文件 `session-log-file`（2026-09-11 起按 run 落盘，原 `{date}-{project}.md` 废弃），同一 run 重复 autofix 按 `## HH:MM — run #id` 追加分段；文件不存在/空时先写标题与提示头
 
 ## 6. 验证方式（迭代落地时执行；不跑正式测试）
 
@@ -149,5 +152,5 @@
 - 主要函数行数与行号区间（原文件实测）：
   - `main` 54 行（453-507）；`cmd_autofix` 67 行（384-450）；`collect_failed_runs` 55 行（75-129）；`cmd_commit_pr` 52 行（330-381）；`write_autofix_log` 41 行（159-199）；`write_ci_fix` 39 行（202-240）；`build_autofix_prompt` 25 行（132-156）；`find_commit_msg_file` 15 行（313-327）
 - 调用关系：cmd_fetch/cmd_autofix 共用 collect_failed_runs；cmd_autofix 独占 build_autofix_prompt/write_autofix_log/write_ci_fix/extract_session_id；cmd_commit_pr 独占 find_commit_msg_file
-- 重构版 tools/ai-ops-1.py 当前实现（2026-09-11）：日志用 logging 库（模块级 logger "ai-ops" + StreamHandler→stderr，格式 `[ai-ops] 文件名:行号 消息`；`log()` 包一层并以 stacklevel=2 记录 **调用点** 行号，故输出行号即 log 的调用位置，见 tools/ai-ops-1.py:33-58）+ 常量（FAIL_CONCLUSIONS、REPO_ROOT、LOG_DIR、FIX_INFO_FILE）+ log/run/project_info/build_fix_info/extract_versions_from_title/collect_failed_runs/fetch_run_log/write_fix_info/load_fix_info/entry_from_fix_info/build_autofix_prompt/write_autofix_log/extract_session_id/build_commit_msg_prompt + cmd_fetch / cmd_branch / cmd_autofix / cmd_commit_msg / cmd_commit_pr + main（注册 fetch/branch/autofix/commit-msg/commit-pr）；date 字段取 fetch 执行当天（datetime.now()，本地时区）；branch 分支名 = 状态文件 branch 字段（fix-{org}-{project}-{date}-{runid}）；commit-msg 输入/输出 = 状态文件 process-error-file / commit-msg-file（拼 log/ai-ops/）；commit-pr 输入 = 状态文件 branch + commit-msg-file（**原文件 find_commit_msg_file 通配搜索不移植**）
+- 重构版 tools/ai-ops-1.py 当前实现（2026-09-11）：日志用 logging 库（模块级 logger "ai-ops" + StreamHandler→stderr，格式 `[ai-ops] 文件名:行号 消息`；`log()` 包一层并以 stacklevel=2 记录 **调用点** 行号，故输出行号即 log 的调用位置）+ 常量（FAIL_CONCLUSIONS、REPO_ROOT、LOG_DIR、FIX_INFO_FILE、LOG_FORMAT）+ log/run/project_info/build_fix_info/extract_versions_from_title/collect_failed_runs/fetch_run_log/write_fix_info/load_fix_info/entry_from_fix_info/build_autofix_prompt/write_autofix_log/extract_session_id/decode_stream/session_log_name/build_commit_msg_prompt + cmd_fetch / cmd_branch / cmd_autofix / cmd_commit_msg / cmd_commit_pr + main（注册 fetch/branch/autofix/commit-msg/commit-pr）；date 字段取 fetch 执行当天（datetime.now()，本地时区）；branch 分支名 = 状态文件 branch 字段（fix-{org}-{project}-{date}-{runid}）；commit-msg 输入/输出 = 状态文件 process-error-file / commit-msg-file（拼 log/ai-ops/）；autofix 会话记录输出 = 状态文件 session-log-file（write_autofix_log，取代 log/ai-ops/{date}-{project}.md）；commit-pr 输入 = 状态文件 branch + commit-msg-file（**原文件 find_commit_msg_file 通配搜索不移植**）
 - 文档挂接点：AGENTS.md 当前进度行与文档索引表、docs/ai-ops/README.md 文档位置行均已有本文件入口

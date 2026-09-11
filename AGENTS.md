@@ -21,7 +21,7 @@
 **开发计划**：`docs/ai-ops/README.md`（决策记录、三阶段计划、待确认项清单）。
 **修复执行手册**：`docs/ai-ops/runbook.md`（Hermes 会话 / autofix 按此执行闭环）。
 
-**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/branch/commit-pr/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环；**tools/ai-ops.py 重构进行中**：目标文件 tools/ai-ops-1.py（fetch/autofix/branch/commit-msg/commit-pr 已落地：均从状态文件 .aiops-fix-info.json 读取 run 上下文/分支名/文件路径（process-error、commit-msg），commit-pr 只 add 项目目录并推送状态文件中的修复分支发起 PR，方案见 docs/ai-ops/refactor-ai-ops.md，重构期间勿再直接改 tools/ai-ops.py）。
+**当前进度**：10 个项目已迁移；仅 library/alpine 接入每日定时 CI（终态再启用其余 schedule）；tools/ai-ops.py 已落地（fetch/rerun/dispatch/commit/branch/commit-pr/autofix 子命令），docs/ai-ops/ 方案与手册已建立；下一步：library/alpine 试点闭环；**tools/ai-ops.py 重构进行中**：目标文件 tools/ai-ops-1.py（fetch/autofix/branch/commit-msg/commit-pr 已落地：均从状态文件 .aiops-fix-info.json 读取 run 上下文/分支名/文件路径（process-error、session-log、commit-msg），commit-pr 只 add 项目目录并推送状态文件中的修复分支发起 PR，autofix 会话记录改为按 run 落盘 session-log-file（取代 log/ai-ops/{date}-{project}.md），方案见 docs/ai-ops/refactor-ai-ops.md，重构期间勿再直接改 tools/ai-ops.py）。
 
 ## 核心工具
 
@@ -86,9 +86,9 @@ library/{project}/
 3. 只改与根因相关的文件（项目 template/、config.yml、get_versions.sh；tools/build.py 仅当其自身有 bug）；**严禁改全局 config.yml 的 registry；严禁 git add -A 卷入无关改动**，只 add 本次相关文件
 4. 改 .sh 先 `bash -n`；构建验证用 `python3 tools/build.py --test library/<project> <version>`（不推送）；完整 loong64 构建耗时长时可只验证版本获取/模板渲染链路并如实说明
 5. Debian 基础镜像统一 forky；FROM 不加 registry 前缀；变体/标签命名规范见 docs/08
-6. **autofix 会话不写任何项目的 AGENTS.md**（受保护文件，一次性会话写入会审批超时被拒）；修复后只自动落盘会话报告 `log/ai-ops/{date}-{project}.md`（不入库），**不再自动回写 `docs/ai-ops/ci-fix.md`**（2026-09-09 移除脚本回写）
+6. **autofix 会话不写任何项目的 AGENTS.md**（受保护文件，一次性会话写入会审批超时被拒）；修复后只自动落盘会话报告 `log/ai-ops/{session-log-file}`（状态文件字段，按 run 落盘，不入库），**不再自动回写 `docs/ai-ops/ci-fix.md`**（2026-09-09 移除脚本回写）
 7. autofix 会话不执行 git add / git commit / git push（只分析+修复+验证）；`commit-pr` 子命令（只 add 项目目录 → commit -F commit-msg → push → gh pr create）用于人工审阅改动后提交并发起 PR；`commit` 子命令（git add -A）仅用于人工审阅改动后的手动提交
-8. autofix 每次会话自动落盘 `log/ai-ops/{date}-{project}.md`（错误原因+修复过程，不入库）；`docs/ai-ops/ci-fix.md` 保留为历史沉淀，不再自动追加
+8. autofix 每次会话自动落盘 `log/ai-ops/{session-log-file}`（错误原因+修复过程，即状态文件 session-log-file 字段；同一 run 重复执行在同一文件内追加条目，不入库）；`docs/ai-ops/ci-fix.md` 保留为历史沉淀，不再自动追加
 
 ## 迁移经验文档与待迁移项目
 
