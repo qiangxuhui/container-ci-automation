@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import logging
 import re
 import shlex
 import subprocess
@@ -29,9 +30,31 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = REPO_ROOT / "log" / "ai-ops"
 FIX_INFO_FILE = REPO_ROOT / ".aiops-fix-info.json"
 
+# 日志格式：[ai-ops] 文件名:行号 消息（行号=调用 log() 的位置，见 log 的 stacklevel）
+LOG_FORMAT = "[ai-ops] %(filename)s:%(lineno)d %(message)s"
+
+
+def _build_logger():
+    logger = logging.getLogger("ai-ops")
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False  # 不向 root 传播，避免重复输出/被 basicConfig 干扰
+    return logger
+
+
+logger = _build_logger()
+
 
 def log(msg):
-    print(f"[ai-ops] {msg}", file=sys.stderr)
+    """打印 `[ai-ops] 文件名:行号 消息` 到 stderr。
+
+    用 logging 库实现；stacklevel=2 让记录的位置是 **log() 的调用点**，
+    而不是 log() 自身内部的 logger.info 那一行。
+    """
+    logger.info(msg, stacklevel=2)
 
 
 def run(cmd, **kw):
