@@ -22,7 +22,9 @@ fi
 MINOR_VERSION="${VERSION%.*}"
 
 # 下载 rootfs
-ROOTFS_URL="https://cz.alpinelinux.org/alpine/v${VERSION}/releases/loongarch64/alpine-minirootfs-${VERSION}-loongarch64.tar.gz"
+# 注意：Alpine 的 releases 目录按 minor 版本组织（v3.24），
+# 而非完整版本（v3.24.1 不存在，会 404）
+ROOTFS_URL="https://cz.alpinelinux.org/alpine/v${MINOR_VERSION}/releases/loongarch64/alpine-minirootfs-${VERSION}-loongarch64.tar.gz"
 echo "Downloading rootfs from: $ROOTFS_URL"
 
 mkdir -p out
