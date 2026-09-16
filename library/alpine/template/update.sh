@@ -22,10 +22,15 @@ fi
 MINOR_VERSION="${VERSION%.*}"
 
 # 下载 rootfs
-ROOTFS_URL="https://cz.alpinelinux.org/alpine/v${VERSION}/releases/loongarch64/alpine-minirootfs-${VERSION}-loongarch64.tar.gz"
+# 注意：Alpine 官方发布目录使用 major.minor（如 v3.24），不是完整版本号
+ROOTFS_URL="https://cz.alpinelinux.org/alpine/v${MINOR_VERSION}/releases/loongarch64/alpine-minirootfs-${VERSION}-loongarch64.tar.gz"
 echo "Downloading rootfs from: $ROOTFS_URL"
 
 mkdir -p out
-wget -q -O "out/rootfs.tar.gz" "$ROOTFS_URL"
+# 下载失败时打印 URL 便于排查
+wget -q -O "out/rootfs.tar.gz" "$ROOTFS_URL" || {
+    echo "ERROR: 下载失败: $ROOTFS_URL"
+    exit 1
+}
 
 echo "Rootfs downloaded: out/rootfs.tar.gz"
