@@ -19,10 +19,11 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 # 计算 minor version
+# Alpine 发布目录按 <major>.<minor> 划分（如 v3.24），补丁版本只体现在文件名中
 MINOR_VERSION="${VERSION%.*}"
 
 # 下载 rootfs
-ROOTFS_URL="https://cz.alpinelinux.org/alpine/v${VERSION}/releases/loongarch64/alpine-minirootfs-${VERSION}-loongarch64.tar.gz"
+ROOTFS_URL="https://cz.alpinelinux.org/alpine/v${MINOR_VERSION}/releases/loongarch64/alpine-minirootfs-${VERSION}-loongarch64.tar.gz"
 echo "Downloading rootfs from: $ROOTFS_URL"
 
 mkdir -p out
